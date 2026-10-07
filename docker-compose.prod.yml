@@ -1,0 +1,23 @@
+# Used on the server by the production deploy workflow (.github/workflows/deploy-production.yml).
+# Copy this file to the server once (e.g. ~/atm-orbita-api/docker-compose.prod.yml) and fill in
+# the placeholders below once you know the name/network of your existing Postgres container.
+services:
+  api:
+    # Must match the lowercase "owner/repo" pushed by .github/workflows/deploy-production.yml
+    image: ghcr.io/joelmaldonado/atm-orbita-api:latest
+    ports:
+      - '3000:3000'
+    environment:
+      PORT: 3000
+      # Point this at your existing Postgres container, e.g.:
+      # postgresql://<user>:<password>@<postgres_container_name>:5432/<db>?schema=public
+      DATABASE_URL: ${DATABASE_URL}
+    networks:
+      # Replace with the docker network your existing Postgres container is already on,
+      # so the api container can reach it by container name.
+      - postgres_network
+    restart: unless-stopped
+
+networks:
+  postgres_network:
+    external: true

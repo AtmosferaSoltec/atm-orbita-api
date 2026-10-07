@@ -25,6 +25,42 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## Docker & deployment
+
+### Local development
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+This starts the API and a Postgres container. Migrations run automatically on
+container start (see `docker-entrypoint.sh`). To create a new migration during
+development:
+
+```bash
+pnpm run prisma:migrate:dev
+```
+
+### CI/CD
+
+- `develop` / `main`: `.github/workflows/ci.yml` runs lint, tests and build on
+  every push/PR.
+- `production`: `.github/workflows/deploy-production.yml` builds the Docker
+  image, pushes it to GitHub Container Registry (`ghcr.io`), then SSHes into
+  the server (using the `SSH_HOST`, `SSH_USER`, `SSH_KEY` repo secrets) to
+  pull the new image and run `docker compose -f docker-compose.prod.yml up -d`.
+  `prisma migrate deploy` runs automatically inside the container on startup.
+
+**One-time server setup** before the first deploy:
+
+1. Copy `docker-compose.prod.yml` to the server (e.g. `~/atm-orbita-api/`).
+2. Edit it: set the image to `ghcr.io/<your-github-username-lowercase>/atm-orbita-api:latest`,
+   set `DATABASE_URL` to point at your existing Postgres container, and set
+   `networks.postgres_network` to the docker network that Postgres container
+   is already on (`docker inspect <postgres_container> | grep -A3 Networks`).
+3. Add the `SSH_HOST`, `SSH_USER`, `SSH_KEY` secrets in the GitHub repo settings.
+
 ## Project setup
 
 ```bash
