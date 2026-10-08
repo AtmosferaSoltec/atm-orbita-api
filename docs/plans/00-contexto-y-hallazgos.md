@@ -124,13 +124,12 @@ Problemas y vacíos detectados al revisar Android. Cada uno indica cómo lo resu
 
 ## 6. Decisiones abiertas
 
-Quedan tres. Ninguna bloquea las fases 0 a 4.
+Quedan dos. Ninguna bloquea las fases 0 a 5.
 
 | # | Pregunta | Recomendación asumida | Se necesita antes de |
 |---|---|---|---|
 | D5 | ¿Qué proveedor de tipo de cambio se usa? | Se decide al iniciar la Fase 6, tras verificar cobertura de las 9 monedas ([09](09-fase-6-tipo-de-cambio-automatico.md)) | Fase 6 |
 | D7 | ¿El cliente web guarda el token de renovación en una cookie `httpOnly`? | Sí para web; las apps móviles lo envían en el cuerpo | Cliente web |
-| D18 | ¿Qué se puede **editar** en el egreso que nació de pagar una compra con tarjeta? (Eliminarlo ya está decidido: la compra vuelve a pendiente) | Solo los datos del pago: cuenta, monto y fecha, y se copian a la compra en la misma transacción. La categoría y la descripción son las de la compra y no se cambian desde el movimiento ([06](06-fase-3-movimientos-transferencias.md) §1) | Fase 5 |
 
 Además hay observaciones sobre el código que ya existe en el repositorio, que no son decisiones de producto sino tareas: están en [03](03-fase-0-fundaciones.md), sección "Estado actual".
 
@@ -147,6 +146,7 @@ Además hay observaciones sobre el código que ya existe en el repositorio, que 
 | D15 | Categoría archivada | **Deja libre su nombre** |
 | D16 | Letra `ñ` | **Se conserva** al normalizar: "Año" y "Ano" son distintas |
 | D17 | Monedas al registrarse | **La moneda principal se elige al registrarse** (la app propone la de la región del teléfono; por defecto soles). "Efectivo" nace en esa moneda. La secundaria es dólares, o soles si la principal ya es dólares ([04](04-fase-1-autenticacion.md) §8) |
+| D18 | Editar el egreso de un pago | **Solo cuenta, monto y fecha.** La categoría y la descripción son las de la compra y no se cambian desde el movimiento; tampoco puede pasar a ser un ingreso. `422 PAYMENT_EXPENSE_LOCKED` ([06](06-fase-3-movimientos-transferencias.md) §1) |
 
 ### Cerradas en la tercera ronda (7 oct 2026)
 

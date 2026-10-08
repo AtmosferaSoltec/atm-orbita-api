@@ -147,7 +147,7 @@ Para que la app pueda avisar antes de eliminar, el movimiento trae `creditPurcha
 
 Si la tarjeta de esa compra fue archivada después del pago, deshacerlo la deja con una compra pendiente; en ese caso la tarjeta **se desarchiva** en la misma transacción, para mantener la regla de que no hay deuda en tarjetas archivadas.
 
-Qué se puede **editar** en el egreso de un pago sigue abierto (D18, [06](06-fase-3-movimientos-transferencias.md) §1).
+**Editar el egreso de un pago** (decisión del usuario): solo se pueden cambiar la cuenta, el monto y la fecha, y el cambio se copia a los datos de pago de la compra en la misma transacción. La categoría y la descripción no se cambian desde el movimiento (`422 PAYMENT_EXPENSE_LOCKED`). Detalle en [06](06-fase-3-movimientos-transferencias.md) §1.
 
 ### Cómo se recalculan los saldos
 
@@ -295,6 +295,10 @@ Con la semilla de ejemplo (las mismas reglas de `DemoRepositoriesTest`):
 | Pagar "Pasajes" y luego eliminar ese egreso con `DELETE /transactions/{id}` | Débito principal vuelve a **1,245.80**; gastos de octubre vuelven a **30.50**; "Pasajes" reaparece como pendiente y Visa Clásica vuelve a deber S/ 336.00 |
 | El egreso de un pago en `GET /entries` | Trae `creditPurchaseId`; un movimiento normal lo trae en `null` |
 | Eliminar dos veces el egreso de un pago | `204` las dos; la compra queda pendiente una sola vez |
+| Pagar "Pasajes" con S/ 240.00 desde Débito principal y editar ese egreso a S/ 238.50 desde Efectivo, con fecha de ayer | Débito principal vuelve a **1,245.80**; Efectivo queda en **82.00**; la compra sigue pagada y sus `paid_amount`, `paid_account_id` y `paid_on` tienen los valores nuevos |
+| Editar ese egreso cambiando la categoría, la descripción o pasándolo a ingreso | `422 PAYMENT_EXPENSE_LOCKED`; nada cambia |
+| Editar ese egreso enviando la misma categoría y descripción | `200` |
+| Editar un movimiento normal | Sigue pudiendo cambiarlo todo |
 | Eliminar el egreso y pagar otra vez la compra | Funciona: nace un egreso nuevo |
 | `DELETE /credit-purchases/{id}` de una compra pagada | `409`; el egreso y la compra siguen intactos |
 | Archivar Visa Clásica con sus 2 compras pendientes | `409 CARD_HAS_PENDING_PURCHASES`; la tarjeta sigue activa |
@@ -323,4 +327,4 @@ Seguridad:
 | Doble pago por reintento de red | Actualización condicionada dentro de la transacción, con prueba de concurrencia |
 | El usuario elimina el egreso de un pago y la compra queda "pagada" sin egreso | No puede ocurrir: eliminar ese egreso devuelve la compra a pendiente en la misma transacción |
 | Tarjeta archivada con deuda invisible | No puede ocurrir: no se archiva con compras pendientes, y deshacer un pago la desarchiva |
-| El usuario edita el egreso de un pago y deja de coincidir con la compra | Pendiente de decidir qué campos se pueden editar (D18) |
+| El usuario edita el egreso de un pago y deja de coincidir con la compra | Solo se editan cuenta, monto y fecha, y se copian a la compra en la misma transacción |

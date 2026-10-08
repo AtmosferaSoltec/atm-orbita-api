@@ -112,13 +112,12 @@ Vienen de Android y se mantienen en el API.
 
 ## Lo que queda por decidir
 
-Quedan tres decisiones, y ninguna bloquea las fases 0 a 4. El detalle y la recomendación de cada una están en [00](00-contexto-y-hallazgos.md), sección 6.
+Quedan dos decisiones, y ninguna bloquea las fases 0 a 5. El detalle y la recomendación de cada una están en [00](00-contexto-y-hallazgos.md), sección 6.
 
 | # | Pregunta | Se necesita antes de |
 |---|---|---|
 | D5 | Proveedor de tipo de cambio | Fase 6 |
 | D7 | Cómo guarda la web el token de renovación | Cliente web |
-| D18 | Qué se puede editar en el egreso nacido de pagar una compra con tarjeta | Fase 5 |
 
 Cuarta ronda (7 oct 2026), ya incorporada:
 
@@ -133,6 +132,7 @@ Cuarta ronda (7 oct 2026), ya incorporada:
 | Categoría archivada | Deja libre su nombre | [05](05-fase-2-cuentas-categorias-ajustes.md) §5 |
 | Letra `ñ` | Se conserva al normalizar | [05](05-fase-2-cuentas-categorias-ajustes.md) §5 |
 | Monedas al registrarse | La principal se elige al registrarse; "Efectivo" nace en ella | [04](04-fase-1-autenticacion.md) §8 |
+| Editar el egreso de un pago | Solo cuenta, monto y fecha | [06](06-fase-3-movimientos-transferencias.md) §1 |
 
 Además hay **tareas** sobre el código que ya existe (nombre de la imagen de producción, puerto publicado sin proxy, migraciones al arrancar, y otras): están en [03](03-fase-0-fundaciones.md), "Estado actual".
 

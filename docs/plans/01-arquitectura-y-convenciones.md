@@ -212,6 +212,7 @@ Los códigos de `errors[]` son los mismos del enumerado `ValidationError` de And
 | `FX_RATE_NOT_CONFIGURED` | 422 | Nuevo en Android: "Configura tu tipo de cambio" (H4) |
 | `PURCHASE_ALREADY_PAID` | 409 | Nuevo en Android |
 | `CARD_HAS_PENDING_PURCHASES` | 409 | Nuevo en Android: no se archiva una tarjeta con deuda |
+| `PAYMENT_EXPENSE_LOCKED` | 422 | `DataError.PAYMENT_LOCKED`: el egreso de un pago solo deja cambiar cuenta, monto y fecha |
 | `ID_CONFLICT` | 409 | `DataError.UNKNOWN` |
 | `RATE_LIMITED` | 429 | Nuevo en Android |
 | `INTERNAL_ERROR` | 500 | `DataError.UNKNOWN` |

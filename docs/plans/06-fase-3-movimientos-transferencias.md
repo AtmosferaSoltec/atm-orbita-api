@@ -64,7 +64,11 @@ Detalles:
 - **Eliminar** marca `deleted_at`. Repetirlo devuelve `204`. Un movimiento eliminado deja de contar en saldos y reportes y responde `404` a `GET` y `PATCH`.
 - **Egreso nacido de pagar una compra con tarjeta** (a partir de la Fase 5). La respuesta de todo movimiento incluye `creditPurchaseId`: el identificador de la compra si el egreso es un pago, o `null`.
   - **Eliminarlo deshace el pago** (decisión del usuario): la compra vuelve a pendiente, en la misma transacción. Desde Movimientos nunca se elimina la compra en sí; eso solo se hace desde la deuda de la tarjeta. Detalle en [08](08-fase-5-tarjetas-de-credito.md) §4.
-  - **Editarlo** está por decidir (D18). Propuesta: se pueden cambiar la cuenta, el monto y la fecha, que son los datos del pago, y el cambio se copia a la compra (`paid_account_id`, `paid_amount`, `paid_on`) en la misma transacción. La categoría y la descripción son las de la compra: cambiarlas desde el movimiento responde `422`, porque el reporte dejaría de coincidir con la compra.
+  - **Editarlo permite cambiar solo la cuenta, el monto y la fecha** (decisión del usuario, 7 oct 2026). Son los datos del pago.
+    - El cambio se copia a la compra (`paid_account_id`, `paid_amount`, `paid_on`) dentro de la misma `prisma.$transaction`, para que el egreso y la compra nunca digan cosas distintas.
+    - La categoría y la descripción son las de la compra. Enviar otra categoría, otra descripción u otro `kind` responde `422 PAYMENT_EXPENSE_LOCKED` y no cambia nada. Enviarlas iguales no es un error.
+    - Las demás reglas de un movimiento siguen valiendo: monto mayor que cero, cuenta propia y no archivada, fecha no posterior a hoy.
+    - La compra sigue pagada; para corregir su categoría o su descripción hay que deshacer el pago, editar la compra pendiente y pagarla de nuevo.
 
 ## 2. Transferencias
 

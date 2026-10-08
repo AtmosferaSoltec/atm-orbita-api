@@ -105,7 +105,7 @@ Reglas:
 
 ### Aplicado en Android el 7 oct 2026
 
-Sobre el modo demo, verificado con `./gradlew :app:assembleDebug :app:testDebugUnitTest` (31 pruebas en verde, 11 de ellas nuevas). No se probó en un dispositivo.
+Sobre el modo demo, verificado con `./gradlew :app:assembleDebug :app:testDebugUnitTest` (32 pruebas en verde, 12 de ellas nuevas). El usuario revisó la app en su teléfono y dio el visto bueno a todo salvo la última fila de la tabla, que se añadió después.
 
 | Regla | Dónde quedó |
 |---|---|
@@ -115,6 +115,7 @@ Sobre el modo demo, verificado con `./gradlew :app:assembleDebug :app:testDebugU
 | Editar y eliminar una compra pendiente | `CreditRepository.updatePurchase` y `deletePurchase`; se abre tocando la compra en Crédito y reutiliza `MovementFormScreen` |
 | Eliminar el egreso de un pago | `Movement.creditPurchaseId`; `DemoEntriesRepository.deleteMovement` devuelve la compra a pendiente; el diálogo lo avisa |
 | No archivar una tarjeta con pagos pendientes | `DemoCreditRepository.archiveCard` lo rechaza; el formulario muestra el motivo |
+| El egreso de un pago solo deja cambiar cuenta, monto y fecha | En `MovementFormScreen` desaparecen las pestañas y la categoría y la descripción quedan fijas, con una nota que lo explica; `DemoEntriesRepository.updateMovement` lo impone (`DataError.PAYMENT_LOCKED`) |
 
 Con el API real, el `409 CATEGORY_NAME_TAKEN` deberá llegar también bajo el campo; hoy esa ruta la cubre la comprobación local del formulario, y el error del repositorio cae al aviso general.
 
