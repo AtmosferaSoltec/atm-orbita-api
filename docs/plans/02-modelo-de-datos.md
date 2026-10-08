@@ -45,7 +45,7 @@ Nunca se guarda un token en claro: solo su hash.
 |---|---|---|
 | `profiles` | `user_id` (PK), `main_currency`, `secondary_currency`, `display_currency`, `fx_mode`, `timezone` | `main <> secondary`; `display` es una de las dos |
 | `exchange_rates` | `id`, `user_id` (nulo = global), `from_currency`, `to_currency`, `rate`, `source`, `rate_date`, `created_at` | `rate > 0`; `from <> to`; global ⇒ `source = 'api'` |
-| `accounts` | `id`, `user_id`, `name`, `type`, `currency`, `initial_balance`, `include_in_savings`, `is_archived`, `sort_order` | nombre 1–60; `initial_balance >= 0`; `unique (id, user_id)` |
+| `accounts` | `id`, `user_id`, `name`, `type`, `currency`, `initial_balance`, `include_in_savings`, `is_archived`, `sort_order` | nombre 1–60; `unique (id, user_id)` |
 | `categories` | `id`, `user_id`, `name`, `name_normalized`, `kind`, `icon`, `color`, `is_archived` | nombre 1–60; color `#RRGGBB`; `unique (id, user_id)` y `unique (id, user_id, kind)`; **`unique (user_id, kind, name_normalized)`** |
 | `transactions` | `id`, `user_id`, `account_id`, `category_id`, `kind`, `amount`, `occurred_on`, `description` | `amount > 0`; descripción ≤ 500 |
 | `transfers` | `id`, `user_id`, `from_account_id`, `to_account_id`, `from_amount`, `to_amount`, `exchange_rate`, `occurred_on`, `note` | montos `> 0`; cuentas distintas; cambio nulo o `> 0` |
@@ -58,6 +58,7 @@ Notas de diseño:
 
 - `credit_purchases.currency` es una **copia** de la moneda de la tarjeta en el momento de la compra. Android permite cambiar la moneda de una tarjeta; las compras anteriores conservan la suya.
 - `transactions.kind` se guarda (no se deriva) para que el saldo se calcule sin unir con `categories`. La clave foránea compuesta con `kind` impide que se desalinee.
+- **`accounts.initial_balance` no tiene restricción de signo en la base.** Que sea `>= 0` es una regla de entrada: la valida el API al crear una cuenta, porque es lo que ofrece el formulario. No va como `CHECK` porque los datos de ejemplo de Android necesitan un saldo inicial negativo: `SampleData.kt` fija el saldo final de cada cuenta y deduce el inicial, y a "Débito principal" le sale **−4,065.80** (1,245.80 menos los 5,311.60 que suman sus movimientos). Con el `CHECK`, la semilla que reproduce esos datos no se podría insertar.
 - `accounts.currency` y `accounts.initial_balance` **no se actualizan** después de crear la cuenta. Es lo que hace Android y lo que mantiene coherentes las transferencias.
 - `is_archived` (ocultar de las listas) y `deleted_at` (borrado lógico) son cosas distintas. La app solo archiva cuentas, categorías y tarjetas; `deleted_at` queda para una futura sincronización.
 - **Fechas.** `occurred_on`, `purchase_date`, `due_date`, `paid_on` y `rate_date` son columnas `DATE` (`@db.Date`), sin hora, sin zona y **sin valor por defecto**. Llegan ya calculadas desde el servicio.
@@ -160,7 +161,6 @@ alter table transfers        add constraint transfers_amounts_positive   check (
 alter table transfers        add constraint transfers_distinct_accounts  check (from_account_id <> to_account_id);
 alter table transfers        add constraint transfers_rate_positive      check (exchange_rate is null or exchange_rate > 0);
 alter table accounts         add constraint accounts_name_not_blank      check (length(btrim(name)) between 1 and 60);
-alter table accounts         add constraint accounts_initial_non_negative check (initial_balance >= 0);
 alter table accounts         add constraint accounts_currency_format     check (currency ~ '^[A-Z]{3}$');
 alter table categories       add constraint categories_color_format      check (color is null or color ~ '^#[0-9A-Fa-f]{6}$');
 alter table exchange_rates   add constraint exchange_rates_rate_positive check (rate > 0);
@@ -280,7 +280,7 @@ Reglas:
 - Cuenta "Efectivo", tipo `cash`, en la moneda principal, saldo inicial 0.
 - Cada categoría inicial lleva su `name_normalized`.
 
-**Semilla de ejemplo** (`prisma/seed.ts` y `test/fixtures/sample-data.ts`): reproduce exactamente `SampleData.kt` de Android. Cinco cuentas, 21 entradas de septiembre y octubre de 2026, dos tarjetas, cuatro compras pendientes y el cambio 1 US$ = S/ 3.20. Se usa en desarrollo y como base de las pruebas de reglas ([12](12-pruebas.md)). La semilla **no se ejecuta en producción**.
+**Semilla de ejemplo** (`prisma/seed.ts` y `test/fixtures/sample-data.ts`): reproduce exactamente `SampleData.kt` de Android. Escribe con Prisma directamente, no por los endpoints, porque necesita cosas que el API no deja hacer a un usuario: un saldo inicial negativo y fechas de compra pasadas. Cinco cuentas, 21 entradas de septiembre y octubre de 2026, dos tarjetas, cuatro compras pendientes y el cambio 1 US$ = S/ 3.20. Se usa en desarrollo y como base de las pruebas de reglas ([12](12-pruebas.md)). La semilla **no se ejecuta en producción**.
 
 ## 9. Volumen esperado
 

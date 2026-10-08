@@ -2,7 +2,7 @@
 
 Qué tiene que cambiar en `atm-orbita-android` para dejar Supabase y consumir este API. Este documento vive en el repositorio del API porque el contrato lo define el API; los cambios de código se hacen en el repositorio de Android.
 
-**Estado al 7 oct 2026.** En Android ya se aplicó: `allowBackup="false"` con sus reglas de respaldo (sección 7), la corrección de los documentos y **la retirada completa de Supabase** del repositorio (sección 8). Todo lo demás (cliente HTTP, repositorios remotos, cambios del dominio, pantallas nuevas) sigue pendiente y es código que aún no se ha escrito.
+**Estado al 7 oct 2026.** En Android ya se aplicó: `allowBackup="false"` con sus reglas de respaldo (sección 7), la corrección de los documentos y **la retirada completa de Supabase** del repositorio (sección 8). Además, **las reglas decididas ese día ya están en el código de Android**, funcionando sobre el modo demo (detalle en la sección 5). Sigue pendiente lo que necesita el API: el cliente HTTP, los repositorios remotos y las pantallas de recuperar contraseña, eliminar cuenta y moneda al registrarse.
 
 ## 1. Lo que no cambia
 
@@ -93,8 +93,8 @@ Reglas:
 |---|---|
 | `DateProvider` real: `LocalDate.now()` del dispositivo; `DemoDateProvider` solo en modo demo | Hoy "hoy" está fijo en 2 oct 2026 para todos |
 | `FxPair.rate` pasa de `BigDecimal` a **`BigDecimal?`** | Decidido: un usuario nuevo no tiene tipo de cambio (detalle abajo) |
-| `ValidationError`: agregar `NAME_TAKEN` y `FX_NOT_CONFIGURED` | Nombre de categoría repetido; operación en otra moneda sin tipo de cambio |
-| `DataError`: agregar `CONFLICT`, `RATE_LIMITED` y `SESSION_EXPIRED` | Compra ya pagada, límite de peticiones, sesión revocada |
+| `DataError`: `NAME_TAKEN`, `FX_NOT_CONFIGURED`, `PURCHASE_ALREADY_PAID` y `CARD_HAS_PENDING_PURCHASES` | **Hecho.** Nombre repetido, otra moneda sin tipo de cambio, compra ya pagada, tarjeta con deuda |
+| `DataError`: agregar `RATE_LIMITED` y `SESSION_EXPIRED` | Pendiente, con el cliente del API: límite de peticiones, sesión revocada |
 | Nuevos textos en `strings.xml` | Ver la tabla de la sección 6 |
 | `CreditRepository`: agregar `updatePurchase` y `deletePurchase` | Editar y eliminar compras pendientes, aprobado |
 | `Movement` gana `creditPurchaseId: String?` | Saber si un egreso es el pago de una compra con tarjeta. Al eliminarlo, la compra vuelve a pendiente, y la app debe avisarlo antes: "Este egreso es el pago de una compra con tarjeta. Al eliminarlo, la compra volverá a estar pendiente." |
@@ -102,6 +102,21 @@ Reglas:
 | Archivar una tarjeta con compras pendientes deja de permitirse | `409 CARD_HAS_PENDING_PURCHASES` → "Esta tarjeta tiene pagos pendientes. Págalos o elimínalos antes de archivarla." También en `DemoCreditRepository.archiveCard` |
 | `Credentials` o el registro llevan `mainCurrency` y `timezone` | La moneda principal se elige al registrarse: la app propone la de la región del teléfono (`Currency.getInstance(Locale.getDefault())`) si está entre las 9 admitidas, o soles; el usuario puede cambiarla en la pantalla de registro |
 | `AuthRepository`: agregar `requestPasswordReset`, `resetPassword` y `deleteAccount` | Requisitos de salida a producción |
+
+### Aplicado en Android el 7 oct 2026
+
+Sobre el modo demo, verificado con `./gradlew :app:assembleDebug :app:testDebugUnitTest` (31 pruebas en verde, 11 de ellas nuevas). No se probó en un dispositivo.
+
+| Regla | Dónde quedó |
+|---|---|
+| Tipo de cambio opcional | `FxPair.rate: BigDecimal?`; enlace "Configura tu tipo de cambio ›" en Inicio y Cuentas; moneda fija en Nueva cuenta y Nueva/Editar tarjeta; campo vacío en Ajustes y en Transferir al cambiar de par |
+| Un par solo se guarda con su tipo de cambio | `SettingsScreen` retiene el par nuevo sin guardar; `SettingsViewModel.setFx` valida; `DemoSettingsRepository.setFx` rechaza |
+| Nombre de categoría único | `normalizeName` en `domain/model/Names.kt`; el formulario lo comprueba al guardar y muestra el mensaje bajo el campo; `DemoCategoriesRepository` lo impone |
+| Editar y eliminar una compra pendiente | `CreditRepository.updatePurchase` y `deletePurchase`; se abre tocando la compra en Crédito y reutiliza `MovementFormScreen` |
+| Eliminar el egreso de un pago | `Movement.creditPurchaseId`; `DemoEntriesRepository.deleteMovement` devuelve la compra a pendiente; el diálogo lo avisa |
+| No archivar una tarjeta con pagos pendientes | `DemoCreditRepository.archiveCard` lo rechaza; el formulario muestra el motivo |
+
+Con el API real, el `409 CATEGORY_NAME_TAKEN` deberá llegar también bajo el campo; hoy esa ruta la cubre la comprobación local del formulario, y el error del repositorio cae al aviso general.
 
 ### Tipo de cambio opcional
 
@@ -154,8 +169,8 @@ La función `translating { }` de `SupabaseAuthRepository` se reescribe para leer
 | `403 EMAIL_NOT_CONFIRMED` | `DataError.EMAIL_NOT_CONFIRMED` |
 | `404 NOT_FOUND` | `DataError.NOT_FOUND` |
 | `409 EMAIL_ALREADY_REGISTERED` | `DataError.EMAIL_ALREADY_REGISTERED` |
-| `409 CATEGORY_NAME_TAKEN` | `ValidationError.NAME_TAKEN`, mostrado **bajo el campo Nombre** |
-| `422 FX_RATE_NOT_CONFIGURED` | `ValidationError.FX_NOT_CONFIGURED` |
+| `409 CATEGORY_NAME_TAKEN` | `DataError.NAME_TAKEN`, mostrado **bajo el campo Nombre** |
+| `422 FX_RATE_NOT_CONFIGURED` | `DataError.FX_NOT_CONFIGURED` |
 | `409 PURCHASE_ALREADY_PAID` | `DataError.CONFLICT` |
 | `409 CARD_HAS_PENDING_PURCHASES` | Mensaje propio en Editar tarjeta |
 | `422 RESET_TOKEN_INVALID` | Mensaje propio en la pantalla de nueva contraseña |
