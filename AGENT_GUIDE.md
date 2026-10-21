@@ -4,7 +4,7 @@ Este archivo es tu punto de partida. Léelo completo antes de escribir una líne
 
 **Qué vas a construir:** el backend real (Go + Gin) de la app Android `atm-orbita-android`. Hoy la app funciona entera con datos de ejemplo en memoria (modo demo); tu trabajo es darle funcionalidad real creando la API y conectando la app a ella. Más adelante habrá un proyecto web y otros módulos que no tienen nada que ver con Orbita, por eso **la API se construye como módulos completamente independientes**.
 
-El repo está vacío a propósito: solo existen `go.mod`, `go.sum`, `CLAUDE.md` y esta guía. Todo lo demás lo creas tú.
+El repo trae lo mínimo: un servidor Gin con `/api/v1/health`, el `Dockerfile`, el compose de producción y los workflows de GitHub ya listos y probados (sección 6). Todo lo demás —módulos, configuración, base de datos— lo creas tú sobre esa base.
 
 ---
 
@@ -14,7 +14,7 @@ El repo está vacío a propósito: solo existen `go.mod`, `go.sum`, `CLAUDE.md` 
 2. **Si algo es ambiguo, pregunta.** No inventes reglas de negocio. Lo que ya está decidido está en la sección 11.
 3. **Ramas:** todo el trabajo va en `develop`. Nunca hagas push a `main` ni a `production`, y nunca pases `develop` a `production`. Flujo único: `develop` → `main` → `production`. Pasar a `main`/`production` lo decide el usuario.
 4. **Commits:** Conventional Commits en inglés (`feat(auth): add refresh token rotation`). Commits pequeños, uno por cambio lógico.
-5. **Servidor de producción:** puedes entrar con `ssh atmosfera` **solo para leer** (`docker ps`, ver compose, ver redes). No crees, borres ni modifiques nada allí sin pedir permiso explícito al usuario para esa acción concreta.
+5. **No tienes acceso al servidor de producción ni lo necesitas.** Todo lo que el servidor requiere ya está preparado (sección 6). Lo único que dependerá del usuario es subir el `.env` y crear la base de datos, y eso se coordina como se explica en 6.3.
 6. **Secretos:** nunca los escribas en el repo, en commits ni en logs. Solo nombres de variables en `.env.example`; los valores los llena el usuario.
 7. Al terminar cada plan, actualiza los documentos afectados **en el mismo cambio** (el plan, `docs/`, y `ORBITA_SPEC.md` de Android si cambió una pantalla, regla o flujo).
 
@@ -137,45 +137,46 @@ Grupos: `APP_ENV`, `PORT`, `DATABASE_URL`, `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TT
 
 ## 6. Despliegue
 
-**Regla:** el servidor **nunca compila**. GitHub construye la imagen Docker y el VPS solo la descarga.
+**Regla:** el servidor **nunca compila**. GitHub construye la imagen Docker y el VPS solo la descarga. Todo esto **ya está hecho y probado**; no lo rediseñes, solo manténlo al día si cambias algo (por ejemplo la versión de Go).
 
-### 6.1 Lo primero que haces: el workflow
-Antes de escribir funcionalidad, deja funcionando el pipeline con un `/health` mínimo. Referencia: `../atm-iris-api/.github/workflows/` y `../atm-iris-api/deploy/docker-compose.yml`, y los otros de `../lavendimia-api` y `../atm-hotel-api`. **Cópiate la forma, no el contenido**: esos son NestJS/Node; este es Go.
+### 6.1 Cómo se despliega
+Para desplegar, el usuario promueve `main` a la rama `production`; al hacer push a `production` se activa `.github/workflows/deploy.yml`, con tres jobs en cadena:
 
-Dos archivos en `.github/workflows/`:
+1. **check**: verifica que el commit **ya está en `main`** (hace cumplir `develop → main → production`), y corre `go vet`, `golangci-lint`, `go test ./...` y `go build ./...`.
+2. **build**: construye la imagen con Docker Buildx **en GitHub** y la sube a GHCR como `ghcr.io/atmosferasoltec/atm-orbita-api` con tags `latest` y `sha-<commit>`.
+3. **deploy**: por SSH copia `deploy/docker-compose.yml` al servidor, hace `docker compose pull` y `up -d` con `IMAGE_TAG=sha-<commit>`, y espera a que el contenedor `orbita-api` esté `healthy` (si no lo está en 120 s, imprime logs y falla).
 
-1. **`ci.yml`** — en push y PR a `develop` y `main`: solo el job `check`.
-2. **`deploy.yml`** — en push a `production` (más `workflow_dispatch`), con `concurrency` para no solapar despliegues, tres jobs en cadena:
-   - **check**: `go vet`, `golangci-lint`, `go test ./...`, `go build ./...`. Además verifica que el commit desplegado **ya está en `main`** (`git merge-base --is-ancestor`), para hacer cumplir `develop → main → production`.
-   - **build**: construye la imagen con Docker Buildx **en GitHub** y la sube a GHCR: `ghcr.io/atmosferasoltec/atm-orbita-api` con tags `latest` y `sha-<commit>`. Caché de GitHub Actions.
-   - **deploy**: por SSH (con los reintentos y `ControlMaster` del workflow de Iris) copia `deploy/docker-compose.yml` a `/opt/orbita-api/`, hace `docker compose pull` y `up -d` con `IMAGE_TAG=sha-<commit>`, y espera a que el contenedor esté `healthy`; si no lo está en 120 s, imprime logs y falla.
+También existe `.github/workflows/ci.yml`: corre solo el job de verificación en push y PR a `develop` y `main`. Tu trabajo diario se valida ahí.
 
-Secrets del repo **ya creados**: `SSH_HOST`, `SSH_USER`, `SSH_KEY`. El login a GHCR vive en el servidor (`~/.docker/config.json`).
+Los secrets del repo (`SSH_HOST`, `SSH_USER`, `SSH_KEY`) ya están configurados.
 
-### 6.2 Docker
-- `Dockerfile` multi-stage: etapa `builder` (`golang`, compila binario estático con `CGO_ENABLED=0`, `-trimpath`, `-ldflags "-s -w"`), etapa final mínima (`alpine` o `distroless`) con usuario **no root**.
-- **Una sola imagen**: el binario trae las migraciones embebidas (`//go:embed`) y los subcomandos `migrate` y `healthcheck`. No hace falta imagen "migrate" aparte como en Nest.
-- Las plantillas MJML se compilan a HTML **durante el build de la imagen** (etapa Node), y el HTML resultante se embebe; el runtime no lleva Node.
-- `deploy/docker-compose.yml` (se copia al servidor en cada despliegue, no se edita a mano allí):
-  - Red externa **`atm-network`** (ahí vive `atm-postgres`).
-  - Servicio `migrate`: misma imagen, comando `migrate`, `restart: "no"`.
-  - Servicio `app` con `depends_on: migrate: condition: service_completed_successfully`, `env_file: .env`, healthcheck (`/app/api healthcheck`), `no-new-privileges`, límite de memoria, `restart: unless-stopped`.
-  - Puerto solo en loopback: **`127.0.0.1:3071:3001`**. El `3061` que usaba el plan viejo de Nest ya lo ocupa `hotel-api`; puertos ocupados hoy: 3010, 3011, 3020, 3021, 3030, 3040, 3041, 3050, 3051, 3060, 3061. Verifica con `ssh atmosfera docker ps` antes de fijarlo.
-  - Nombre de contenedor: `orbita-api`.
-- `.env` real solo en `/opt/orbita-api/.env` del servidor.
-- **Rollback:** relanzar el workflow (`workflow_dispatch`) sobre un commit anterior, o en el VPS `IMAGE_TAG=sha-<anterior> docker compose up -d`. Cada despliegue deja su imagen etiquetada con el SHA justamente para esto.
+### 6.2 Piezas ya creadas (qué hace cada una)
+- **`Dockerfile`**: multi-stage. Etapa `builder` (compila un binario estático con `CGO_ENABLED=0`) y etapa final `alpine` con usuario no root. El `HEALTHCHECK` ejecuta `/app/api healthcheck` porque la imagen final no trae `curl`.
+- **Una sola imagen**: el mismo binario tiene los subcomandos `migrate` y `healthcheck` (`cmd/api/main.go`). Hoy `migrate` no hace nada (no hay migraciones); **tu tarea es conectarlo a goose** con las migraciones embebidas (`//go:embed`) cuando exista la primera.
+- **`deploy/docker-compose.yml`**: se copia al servidor en cada despliegue. Servicio `migrate` (misma imagen, comando `migrate`, termina) y servicio `app` (`depends_on: migrate: service_completed_successfully`, `env_file: .env`, healthcheck, `no-new-privileges`, 512 MB de memoria, `restart: unless-stopped`). Si una migración falla, la app nueva **no arranca** y la anterior sigue sirviendo.
+- **Red y puerto**: el contenedor se une a la red externa `atm-network` (donde vive el Postgres). Se publica solo en loopback, `127.0.0.1:3071` → `3001` del contenedor. Nginx del servidor ya publica `https://orbita-api.atmosferast.com` hacia ese puerto.
+- **Dominio**: `https://orbita-api.atmosferast.com` (HTTPS ya configurado en el servidor).
 
-### 6.3 Cosas del servidor que NO hace el agente (las hace el usuario)
-Crear `/opt/orbita-api` (propietario `deploy`) y su `.env`; crear la base `orbita`, rol `orbita_app` y esquema `orbita` en `atm-postgres` (ver 7); el vhost de nginx y el certificado para el dominio de la API. **Prepara los scripts y las instrucciones exactas**, pero no los ejecutes en producción sin autorización.
+### 6.3 El `.env` de producción y la base de datos (coordinación con el usuario)
+El `.env` real vive **solo** en el servidor (`/opt/orbita-api/.env`); nunca en el repo. El servidor **no lo tiene todavía**, así que el deploy fallará con "Falta /opt/orbita-api/.env" hasta que el usuario lo suba. Esto es intencional.
+
+**Antes de pedir que se promueva a `production`, haz esto:**
+1. Revisa que `.env.example` tenga **todas** las variables que el código lee, con un comentario de qué es cada una y qué valor de producción lleva.
+2. Dile al usuario, en una lista clara, **qué variables debe poner en el `.env` del servidor** (cuáles obligatorias, cuáles opcionales, y cuáles debe generar: por ejemplo secretos con `openssl rand -base64 48`).
+3. Entrégale `scripts/provision-db.sql` (ver sección 7) y la instrucción exacta para ejecutarlo en el servidor, junto con el formato del `DATABASE_URL`.
+4. El usuario subirá el `.env`, creará la base y te avisará; recién entonces se promueve a `production`.
+
+**Rollback:** relanzar el workflow (`workflow_dispatch`) sobre un commit anterior, o que el usuario ejecute en el VPS `IMAGE_TAG=sha-<anterior> docker compose up -d`. Cada despliegue deja su imagen etiquetada con el SHA justamente para esto.
 
 ---
 
 ## 7. Base de datos
 
-- Ya existe un contenedor **PostgreSQL compartido** (`atm-postgres` en el VPS, `atmosfera-postgres` en local en `../atmosfera-postgres`). **Este repo no levanta Postgres.** Verifica la versión con `ssh atmosfera docker ps` (hoy `postgres:17-alpine`).
-- Cada proyecto tiene su propio rol, su propia base y su propio **esquema** (no `public`). Orbita: rol `orbita_app`, base `orbita`, esquema `orbita`. En el servidor aún no existen.
-- Entrega `scripts/provision-db.sql` siguiendo el patrón de `../forma-de-trabajo.md` sección 3.2 (rol sin `CREATEDB`, `REVOKE` sobre `public`, `search_path` del rol al esquema).
-- Conexión en producción por nombre de contenedor: `postgresql://orbita_app:PASS@atm-postgres:5432/orbita` (el host **no** es `localhost`); en local, `localhost:5432`.
+- La base es **PostgreSQL**, y ya corre en un **contenedor Docker** en el servidor de producción (nombre del contenedor: `atm-postgres`), compartido con otros proyectos del usuario. **Este repo no levanta ni administra ese Postgres.**
+- Cada proyecto tiene su propio rol, su propia base y su propio **esquema** (no `public`). Orbita: rol `orbita_app`, base `orbita`, esquema `orbita`. **El usuario las crea en el servidor** (ver 6.3); tú entregas el script.
+- Entrega `scripts/provision-db.sql` (parametrizado con la contraseña como variable de psql): crea el rol sin `CREATEDB`, la base con `OWNER orbita_app`, revoca el acceso a `PUBLIC`, crea el esquema `orbita`, quita permisos sobre `public` y fija el `search_path` del rol al esquema `orbita`. Se ejecuta como superusuario: `docker exec -i atm-postgres psql -v ON_ERROR_STOP=1 -U postgres -v app_password="'<clave>'" -d postgres < scripts/provision-db.sql`.
+- **Desarrollo local:** como no tienes ese contenedor, entrega un `docker-compose.dev.yml` en el repo con un Postgres de desarrollo (base `orbita`, mismo rol y esquema, puerto local `5432`) para trabajar. Es solo para tu máquina; nunca se despliega.
+- `DATABASE_URL`: en producción el host es el nombre del contenedor, **no** `localhost`: `postgresql://orbita_app:PASS@atm-postgres:5432/orbita?search_path=orbita`. En local, `localhost`.
 - Tablas `snake_case` plural, columnas `snake_case`, UUID v7, `TIMESTAMPTZ`, `NUMERIC(14,2)` para dinero, `VARCHAR(n)` con tamaño. Casi nada se borra: `is_active`/`archived_at` para catálogos.
 - **Solo migraciones versionadas** (goose); el esquema jamás se toca a mano. Las migraciones deben ser seguras de aplicar con la versión anterior aún corriendo (agregar antes que quitar).
 
@@ -198,15 +199,15 @@ Crear `/opt/orbita-api` (propietario `deploy`) y su `.env`; crear la base `orbit
 
 ## 10. Tu trabajo, en este orden
 
-### Paso 1 · Pipeline
-Crea `.gitignore` (ya hay uno mínimo), estructura base, `/health`, `Dockerfile`, `deploy/docker-compose.yml`, `ci.yml` y `deploy.yml` (sección 6). Valida `ci.yml` en `develop`. **No dispares un despliegue**: eso lo decide el usuario al promover a `production`.
+### Paso 1 · Pipeline (ya hecho)
+El pipeline, el `Dockerfile` y el compose ya están listos (sección 6). Lo único pendiente de tu parte aquí: confirma que `ci.yml` pasa en verde en `develop` con el primer push, y construye sobre la base (`cmd/api/main.go` es solo un esqueleto mínimo; reemplázalo por la estructura de la sección 3). **No dispares un despliegue**: eso lo decide el usuario al promover a `production`.
 
 ### Paso 2 · Revisar TODO el proyecto Android
 Antes de planificar, lee `../atm-orbita-android` completo: no es opcional ni se resume.
 - `docs/CLAUDE.md` y `docs/01` … `docs/06` y `docs/ORBITA_SPEC.md`.
 - El código: capas `domain`, `data/demo`, `ui`, los ViewModels, los modelos, las reglas de dinero y monedas, las 8+ pantallas y cada flujo (login, registro, recuperar contraseña, inicio, movimientos, cuentas, categorías, tarjetas de crédito, ajustes, eliminar cuenta, etc.).
 - Entiende **cómo funcionan las maquetas y qué hace cada funcionalidad**, qué datos necesita cada pantalla y qué reglas aplica `data/demo` (esas reglas son la especificación que la API debe reproducir de verdad).
-- Material de apoyo: `../atm-orbita-api-nest/docs/plans/` contiene 17 planes de una versión anterior en NestJS (contexto, modelo de datos, fases, seguridad, decisiones D1–D18). **Úsalos como referencia de decisiones de negocio**, no como verdad: el stack cambió (Go/sqlc en lugar de Nest/Prisma) y el código de Android manda si hay contradicción. Anota cualquier diferencia que encuentres.
+- El proyecto Android es `atm-orbita-android`. **Si no lo tienes en tu máquina, pídeselo al usuario antes de planificar**: sin él no se puede hacer este paso. Si algo de sus documentos contradice al código, manda el código; anota la diferencia.
 
 ### Paso 3 · Escribir los planes en `docs/plans/`
 Crea la carpeta `docs/plans/` y, **un archivo por plan**, numerados y separados por funcionalidad, por ejemplo:

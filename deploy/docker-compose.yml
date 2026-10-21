@@ -1,0 +1,50 @@
+# Stack de produccion del API. Se copia a /opt/orbita-api desde GitHub Actions en
+# cada despliegue; no se edita a mano en el servidor.
+#
+# Nunca construye: la imagen se compila una sola vez en CI y se publica en GHCR.
+# El .env real vive solo en el servidor (/opt/orbita-api/.env).
+#
+# Sin base de datos: PostgreSQL es un stack aparte (`atm-postgres`), alcanzable
+# por la red externa `atm-network`. En DATABASE_URL el host es el nombre del
+# contenedor, no localhost.
+
+networks:
+  shared:
+    name: atm-network
+    external: true
+
+services:
+  # Aplica las migraciones pendientes y termina. `app` no arranca hasta que esto
+  # acaba bien, asi que una migracion rota bloquea el despliegue.
+  migrate:
+    image: ghcr.io/atmosferasoltec/atm-orbita-api:${IMAGE_TAG:-latest}
+    command: ["migrate"]
+    env_file: .env
+    networks:
+      - shared
+    restart: "no"
+
+  app:
+    image: ghcr.io/atmosferasoltec/atm-orbita-api:${IMAGE_TAG:-latest}
+    container_name: orbita-api
+    env_file: .env
+    environment:
+      APP_ENV: production
+      PORT: "3001"
+    # Solo loopback: quien publica al exterior es nginx.
+    ports:
+      - "127.0.0.1:3071:3001"
+    networks:
+      - shared
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/app/api", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 512m
