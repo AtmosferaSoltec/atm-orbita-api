@@ -1,0 +1,33 @@
+# Postgres de desarrollo, solo para la maquina local. Nunca se despliega: en
+# produccion la base vive en el contenedor compartido atm-postgres.
+#
+#   docker compose -f docker-compose.dev.yml up -d
+#
+# La primera vez, crear el rol, la base y el esquema con el mismo script que en
+# produccion (ver README de docs/plans/00-foundations.md):
+#
+#   docker exec -i orbita-postgres-dev psql -v ON_ERROR_STOP=1 -U postgres \
+#     -v app_password="'orbita_dev'" -d postgres < scripts/provision-db.sql
+#
+# Las claves de aqui son de desarrollo y el puerto solo escucha en loopback.
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: orbita-postgres-dev
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_DEV_PASSWORD:-postgres}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - orbita-postgres-dev:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  orbita-postgres-dev:
