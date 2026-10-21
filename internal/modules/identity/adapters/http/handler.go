@@ -1,0 +1,216 @@
+// Package http traduce HTTP ⇄ casos de uso de identity. Sin reglas de negocio:
+// parsear, llamar al servicio, responder.
+package http
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity/app"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity/domain"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/apierror"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/auth"
+)
+
+// Service son los casos de uso que usa el handler.
+type Service interface {
+	Register(ctx context.Context, in app.RegisterInput) (app.AuthResult, error)
+	Login(ctx context.Context, in app.LoginInput) (app.AuthResult, error)
+	Refresh(ctx context.Context, refreshToken string) (app.Tokens, error)
+	Logout(ctx context.Context, refreshToken string) error
+	Me(ctx context.Context, userID uuid.UUID) (domain.User, error)
+}
+
+// Códigos propios del módulo.
+const (
+	codeEmailAlreadyRegistered = "EMAIL_ALREADY_REGISTERED"
+	codeInvalidCredentials     = "INVALID_CREDENTIALS"
+	codeSessionExpired         = "SESSION_EXPIRED"
+)
+
+var (
+	errEmailTaken         = apierror.New(http.StatusConflict, codeEmailAlreadyRegistered, "Ese correo ya tiene una cuenta. Inicia sesión.")
+	errInvalidCredentials = apierror.New(http.StatusUnauthorized, codeInvalidCredentials, "Correo o contraseña incorrectos.")
+	errSessionExpired     = apierror.New(http.StatusUnauthorized, codeSessionExpired, "Tu sesión terminó. Inicia sesión de nuevo.")
+)
+
+// Handler atiende las rutas de autenticación.
+type Handler struct {
+	service Service
+}
+
+// NewHandler crea el handler.
+func NewHandler(service Service) *Handler { return &Handler{service: service} }
+
+// Routes monta las rutas. public no exige token; limited son las públicas con
+// el límite estrecho de LOGIN_RATE_LIMIT_PER_MINUTE; protected exige token.
+func (h *Handler) Routes(public, limited, protected gin.IRoutes) {
+	limited.POST("/auth/register", h.register)
+	limited.POST("/auth/login", h.login)
+	limited.POST("/auth/refresh", h.refresh)
+	public.POST("/auth/logout", h.logout)
+	protected.GET("/me", h.me)
+}
+
+type registerRequest struct {
+	Email        string `json:"email"`
+	Password     string `json:"password"`
+	MainCurrency string `json:"main_currency"`
+	Timezone     string `json:"timezone"`
+}
+
+type loginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type refreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+type userResponse struct {
+	ID        uuid.UUID `json:"id"`
+	Email     string    `json:"email"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type tokensResponse struct {
+	AccessToken          string `json:"access_token"`
+	AccessTokenExpiresIn int    `json:"access_token_expires_in"`
+	RefreshToken         string `json:"refresh_token"`
+}
+
+type authResponse struct {
+	User   userResponse   `json:"user"`
+	Tokens tokensResponse `json:"tokens"`
+}
+
+func (h *Handler) register(c *gin.Context) {
+	var req registerRequest
+	if !bind(c, &req) {
+		return
+	}
+	result, err := h.service.Register(c.Request.Context(), app.RegisterInput{
+		Email: req.Email, Password: req.Password, MainCurrency: req.MainCurrency,
+		Timezone: req.Timezone, UserAgent: c.Request.UserAgent(),
+	})
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	apierror.Created(c, toAuthResponse(result))
+}
+
+func (h *Handler) login(c *gin.Context) {
+	var req loginRequest
+	if !bind(c, &req) {
+		return
+	}
+	result, err := h.service.Login(c.Request.Context(), app.LoginInput{
+		Email: req.Email, Password: req.Password, UserAgent: c.Request.UserAgent(),
+	})
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	apierror.OK(c, toAuthResponse(result))
+}
+
+func (h *Handler) refresh(c *gin.Context) {
+	var req refreshRequest
+	if !bind(c, &req) {
+		return
+	}
+	tokens, err := h.service.Refresh(c.Request.Context(), req.RefreshToken)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	apierror.OK(c, gin.H{"tokens": toTokens(tokens)})
+}
+
+func (h *Handler) logout(c *gin.Context) {
+	var req refreshRequest
+	if !bind(c, &req) {
+		return
+	}
+	if err := h.service.Logout(c.Request.Context(), req.RefreshToken); err != nil {
+		respondError(c, err)
+		return
+	}
+	apierror.NoContent(c)
+}
+
+func (h *Handler) me(c *gin.Context) {
+	principal, _ := auth.FromContext(c.Request.Context())
+	user, err := h.service.Me(c.Request.Context(), principal.UserID)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	apierror.OK(c, toUser(user))
+}
+
+// bind lee el cuerpo JSON. Los campos que no conoce se ignoran: una app más
+// nueva puede mandar datos que esta versión del API todavía no usa.
+func bind(c *gin.Context, target any) bool {
+	if err := json.NewDecoder(c.Request.Body).Decode(target); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			apierror.Respond(c, err)
+			return false
+		}
+		apierror.Respond(c, apierror.Validation(apierror.FieldError{Field: "body", Code: domain.CodeInvalidFormat}))
+		return false
+	}
+	return true
+}
+
+func respondError(c *gin.Context, err error) {
+	var validation *domain.ValidationError
+	var tooMany *domain.TooManyAttemptsError
+	switch {
+	case errors.As(err, &validation):
+		fields := make([]apierror.FieldError, 0, len(validation.Fields))
+		for _, f := range validation.Fields {
+			fields = append(fields, apierror.FieldError{Field: f.Field, Code: f.Code})
+		}
+		apierror.Respond(c, apierror.Validation(fields...))
+	case errors.As(err, &tooMany):
+		c.Header("Retry-After", strconv.Itoa(int(tooMany.RetryAfter.Seconds())+1))
+		apierror.Respond(c, apierror.ErrTooManyRequests)
+	case errors.Is(err, domain.ErrEmailTaken):
+		apierror.Respond(c, errEmailTaken)
+	case errors.Is(err, domain.ErrInvalidCredentials):
+		apierror.Respond(c, errInvalidCredentials)
+	case errors.Is(err, domain.ErrSessionExpired):
+		apierror.Respond(c, errSessionExpired)
+	case errors.Is(err, domain.ErrNotFound):
+		apierror.Respond(c, apierror.ErrUnauthorized)
+	default:
+		apierror.Respond(c, err)
+	}
+}
+
+func toAuthResponse(result app.AuthResult) authResponse {
+	return authResponse{User: toUser(result.User), Tokens: toTokens(result.Tokens)}
+}
+
+func toUser(user domain.User) userResponse {
+	return userResponse{ID: user.ID, Email: user.Email, CreatedAt: user.CreatedAt.UTC()}
+}
+
+func toTokens(tokens app.Tokens) tokensResponse {
+	return tokensResponse{
+		AccessToken:          tokens.AccessToken,
+		AccessTokenExpiresIn: int(tokens.ExpiresIn.Seconds()),
+		RefreshToken:         tokens.RefreshToken,
+	}
+}
