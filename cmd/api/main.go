@@ -1,10 +1,14 @@
-// Punto de entrada minimo: deja listo el pipeline de despliegue. El resto de la
-// aplicacion (modulos, config, base de datos) se construye a partir de aqui.
+// Punto de entrada único del API: carga la configuración, arma los módulos y
+// arranca Gin. El mismo binario tiene los subcomandos que usan Docker y el
+// compose de producción:
+//
+//	api                     arranca el servidor
+//	api migrate [up|down|status]
+//	api healthcheck         lo usa el HEALTHCHECK de la imagen (no trae curl)
 package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -13,7 +17,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	// La imagen trae tzdata, pero así "hoy" por zona horaria no depende del sistema.
+	_ "time/tzdata"
+
+	"github.com/AtmosferaSoltec/atm-orbita-api/db"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/config"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/database"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/health"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/httpserver"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/logger"
 )
 
 func main() {
@@ -22,10 +34,7 @@ func main() {
 		case "healthcheck":
 			os.Exit(healthcheck())
 		case "migrate":
-			// Lo invoca el servicio `migrate` del compose antes de arrancar la app.
-			// Sustituir por goose cuando exista la primera migracion.
-			slog.Info("no migrations to apply")
-			return
+			os.Exit(migrate(os.Args[2:]))
 		default:
 			fmt.Fprintf(os.Stderr, "unknown command %q\n", os.Args[1])
 			os.Exit(2)
@@ -35,47 +44,71 @@ func main() {
 }
 
 func run() int {
-	if os.Getenv("APP_ENV") == "production" {
-		gin.SetMode(gin.ReleaseMode)
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	log := logger.New(os.Stdout, cfg.IsProduction())
+	slog.SetDefault(log)
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	pool, err := database.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		log.Error("database", "error", err)
+		return 1
+	}
+	defer pool.Close()
+	// No se exige la base para arrancar: /health/ready dice si responde, y el
+	// pool se reconecta solo cuando vuelve.
+	if err := database.Ping(ctx, pool, 5*time.Second); err != nil {
+		log.Warn("database not reachable at startup", "error", err)
 	}
 
-	router := gin.New()
-	router.Use(gin.Recovery())
-	router.GET("/api/v1/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"data": gin.H{"status": "ok"}})
+	router, api, err := httpserver.NewRouter(httpserver.Options{
+		Production:         cfg.IsProduction(),
+		Logger:             log,
+		CORSOrigins:        cfg.CORSOrigins,
+		RateLimitPerMinute: cfg.RateLimitPerMinute,
 	})
-
-	server := &http.Server{
-		Addr:              ":" + port(),
-		Handler:           router,
-		ReadHeaderTimeout: 5 * time.Second,
+	if err != nil {
+		log.Error("router", "error", err)
+		return 1
 	}
+	health.Register(api, pool)
 
-	go func() {
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			slog.Error("server stopped", "error", err)
-			os.Exit(1)
-		}
-	}()
-	slog.Info("server started", "addr", server.Addr)
-
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	<-stop
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := server.Shutdown(ctx); err != nil {
-		slog.Error("shutdown failed", "error", err)
+	if err := httpserver.Serve(ctx, router, cfg.Port, log); err != nil {
+		log.Error("server", "error", err)
 		return 1
 	}
 	return 0
 }
 
-// healthcheck lo usa el HEALTHCHECK de Docker: la imagen final no trae curl ni wget.
+// migrate lo invoca el servicio migrate del compose antes de arrancar la app.
+// Solo necesita DATABASE_URL.
+func migrate(args []string) int {
+	log := logger.New(os.Stdout, os.Getenv("APP_ENV") == string(config.Production))
+	command := database.MigrateUp
+	if len(args) > 0 {
+		command = args[0]
+	}
+	databaseURL, err := config.DatabaseURL()
+	if err != nil {
+		log.Error("migrate", "error", err)
+		return 1
+	}
+	if err := database.Migrate(context.Background(), databaseURL, db.Migrations, command, log); err != nil {
+		log.Error("migrate", "error", err)
+		return 1
+	}
+	return 0
+}
+
 func healthcheck() int {
 	client := http.Client{Timeout: 3 * time.Second}
-	res, err := client.Get("http://127.0.0.1:" + port() + "/api/v1/health")
+	res, err := client.Get("http://127.0.0.1:" + port() + httpserver.APIPrefix + "/health")
 	if err != nil {
 		return 1
 	}
