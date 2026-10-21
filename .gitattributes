@@ -1,0 +1,4 @@
+# LF en la copia de trabajo en cualquier sistema. Con core.autocrlf=true (Windows),
+# los .go pasaban a CRLF y el gofmt de golangci-lint los marcaba, aunque en el check
+# del despliegue (Linux) estuvieran bien.
+* text=auto eol=lf
