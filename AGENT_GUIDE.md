@@ -146,7 +146,8 @@ Para desplegar, el usuario promueve `main` a la rama `production`; al hacer push
 2. **build**: construye la imagen con Docker Buildx **en GitHub** y la sube a GHCR como `ghcr.io/atmosferasoltec/atm-orbita-api` con tags `latest` y `sha-<commit>`.
 3. **deploy**: por SSH copia `deploy/docker-compose.yml` al servidor, hace `docker compose pull` y `up -d` con `IMAGE_TAG=sha-<commit>`, y espera a que el contenedor `orbita-api` esté `healthy` (si no lo está en 120 s, imprime logs y falla).
 
-También existe `.github/workflows/ci.yml`: corre solo el job de verificación en push y PR a `develop` y `main`. Tu trabajo diario se valida ahí.
+
+No hay workflow en `develop` ni `main`: el check solo corre al desplegar. Por eso, **antes de pedir que se promueva a `production`, corre en local lo mismo que el check** (`go vet ./...`, `golangci-lint run`, `go test ./...`, `go build ./...`); un error de lint tumba el despliegue.
 
 Los secrets del repo (`SSH_HOST`, `SSH_USER`, `SSH_KEY`) ya están configurados.
 
@@ -212,7 +213,7 @@ El usuario trabaja **siempre con migraciones**, como Prisma: el esquema evolucio
 ## 10. Tu trabajo, en este orden
 
 ### Paso 1 · Pipeline (ya hecho)
-El pipeline, el `Dockerfile` y el compose ya están listos (sección 6). Lo único pendiente de tu parte aquí: confirma que `ci.yml` pasa en verde en `develop` con el primer push, y construye sobre la base (`cmd/api/main.go` es solo un esqueleto mínimo; reemplázalo por la estructura de la sección 3). **No dispares un despliegue**: eso lo decide el usuario al promover a `production`.
+El pipeline, el `Dockerfile` y el compose ya están listos (sección 6). Lo único pendiente de tu parte aquí: construye sobre la base (`cmd/api/main.go` es solo un esqueleto mínimo; reemplázalo por la estructura de la sección 3). **No dispares un despliegue**: eso lo decide el usuario al promover a `production`.
 
 ### Paso 2 · Revisar TODO el proyecto Android
 Antes de planificar, lee el proyecto `atm-orbita-android` completo: no es opcional ni se resume.
