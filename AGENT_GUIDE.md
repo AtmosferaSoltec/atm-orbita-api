@@ -132,7 +132,7 @@ Autenticación (detalles en su plan, con las decisiones de la sección 11):
 
 Los **nombres** están en `.env.example` (sin valores). El usuario llena el `.env`. Cada variable nueva se agrega a `.env.example` con un comentario, y a la validación de arranque. El `.env` real nunca se sube a git.
 
-Grupos: `APP_ENV`, `PORT`, `DATABASE_URL`, `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_DAYS`, `CORS_ORIGIN`, límites de rate limit, `RESEND_API_KEY`, `MAIL_FROM`, `R2_*`, `MODULES_ENABLED`.
+Grupos: `APP_ENV`, `PORT`, `DATABASE_URL`, `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_DAYS`, `CORS_ORIGIN`, límites de rate limit, `RESEND_API_KEY`, `MAIL_FROM`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `MODULES_ENABLED`.
 
 ---
 
