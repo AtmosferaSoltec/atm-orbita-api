@@ -15,8 +15,9 @@ El repo trae lo mínimo: un servidor Gin con `/api/v1/health`, el `Dockerfile`, 
 3. **Ramas:** todo el trabajo va en `develop`. Nunca hagas push a `main` ni a `production`, y nunca pases `develop` a `production`. Flujo único: `develop` → `main` → `production`. Pasar a `main`/`production` lo decide el usuario.
 4. **Commits:** Conventional Commits en inglés (`feat(auth): add refresh token rotation`). Commits pequeños, uno por cambio lógico.
 5. **No tienes acceso al servidor de producción ni lo necesitas.** Todo lo que el servidor requiere ya está preparado (sección 6). Lo único que dependerá del usuario es subir el `.env` y crear la base de datos, y eso se coordina como se explica en 6.3.
-6. **Secretos:** nunca los escribas en el repo, en commits ni en logs. Solo nombres de variables en `.env.example`; los valores los llena el usuario.
-7. Al terminar cada plan, actualiza los documentos afectados **en el mismo cambio** (el plan, `docs/`, y `ORBITA_SPEC.md` de Android si cambió una pantalla, regla o flujo).
+6. **Migraciones siempre** (ver 7.1): ningún cambio de esquema se hace fuera de una migración versionada.
+7. **Secretos:** nunca los escribas en el repo, en commits ni en logs. Solo nombres de variables en `.env.example`; los valores los llena el usuario.
+8. Al terminar cada plan, actualiza los documentos afectados **en el mismo cambio** (el plan, `docs/`, y `ORBITA_SPEC.md` de Android si cambió una pantalla, regla o flujo).
 
 ---
 
@@ -36,7 +37,7 @@ El repo trae lo mínimo: un servidor Gin con `/api/v1/health`, el `Dockerfile`, 
 | Lenguaje | Go (la versión de `go.mod`) |
 | HTTP | **Gin** |
 | PostgreSQL | **pgx v5** (`pgxpool`) + **sqlc** (ver 2.1) |
-| Migraciones | **goose**, SQL puro, versionadas |
+| Migraciones | **goose**, SQL puro, versionadas, con tabla de control en la base (ver 7.1) |
 | Validación | `go-playground/validator` (ya viene con Gin) para forma; reglas de negocio en el dominio |
 | Auth | JWT HS256 (`golang-jwt/jwt/v5`) + refresh token opaco; contraseñas con **argon2id** (`golang.org/x/crypto/argon2`) |
 | Config | Variables de entorno validadas al arrancar (la app **no arranca** si falta una obligatoria) |
@@ -157,14 +158,17 @@ Los secrets del repo (`SSH_HOST`, `SSH_USER`, `SSH_KEY`) ya están configurados.
 - **Red y puerto**: el contenedor se une a la red externa `atm-network` (donde vive el Postgres). Se publica solo en loopback, `127.0.0.1:3071` → `3001` del contenedor. Nginx del servidor ya publica `https://orbita-api.atmosferast.com` hacia ese puerto.
 - **Dominio**: `https://orbita-api.atmosferast.com` (HTTPS ya configurado en el servidor).
 
-### 6.3 El `.env` de producción y la base de datos (coordinación con el usuario)
-El `.env` real vive **solo** en el servidor (`/opt/orbita-api/.env`); nunca en el repo. El servidor **no lo tiene todavía**, así que el deploy fallará con "Falta /opt/orbita-api/.env" hasta que el usuario lo suba. Esto es intencional.
+### 6.3 El `.env` de producción y la base de datos (ya preparados en el servidor)
+El `.env` real vive **solo** en el servidor (`/opt/orbita-api/.env`); nunca en el repo. **El usuario ya creó en el servidor** la base `orbita`, el rol `orbita_app`, el esquema `orbita` (con `scripts/provision-db.sql`) y un `.env` inicial con estas variables ya con valor:
 
-**Antes de pedir que se promueva a `production`, haz esto:**
-1. Revisa que `.env.example` tenga **todas** las variables que el código lee, con un comentario de qué es cada una y qué valor de producción lleva.
-2. Dile al usuario, en una lista clara, **qué variables debe poner en el `.env` del servidor** (cuáles obligatorias, cuáles opcionales, y cuáles debe generar: por ejemplo secretos con `openssl rand -base64 48`).
-3. Entrégale `scripts/provision-db.sql` (ver sección 7) y la instrucción exacta para ejecutarlo en el servidor, junto con el formato del `DATABASE_URL`.
-4. El usuario subirá el `.env`, creará la base y te avisará; recién entonces se promueve a `production`.
+`APP_ENV`, `PORT`, `DATABASE_URL`, `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL_SECONDS` (900), `REFRESH_TOKEN_TTL_DAYS` (30), `RATE_LIMIT_PER_MINUTE`, `LOGIN_RATE_LIMIT_PER_MINUTE`.
+
+No conoces sus valores y no los necesitas: tu código solo lee esos nombres. Con eso, un despliegue del esqueleto actual funciona tal cual.
+
+**Cada vez que tu código lea una variable nueva** (por ejemplo `RESEND_API_KEY`, `MAIL_FROM`, `CORS_ORIGIN`, `R2_*`, `MODULES_ENABLED`):
+1. Agrégala a `.env.example` con un comentario de qué es y qué valor lleva en producción.
+2. Haz que la validación de arranque falle con un mensaje claro si falta una obligatoria (así un `.env` incompleto se nota en el deploy, no en producción).
+3. **Antes de pedir que se promueva a `production`**, entrégale al usuario la lista exacta de variables **nuevas** que debe agregar al `.env` del servidor (cuáles obligatorias, cuáles opcionales, y cuáles debe generar, por ejemplo con `openssl rand -base64 48`). Él las sube y te avisa; recién entonces se promueve.
 
 **Rollback:** relanzar el workflow (`workflow_dispatch`) sobre un commit anterior, o que el usuario ejecute en el VPS `IMAGE_TAG=sha-<anterior> docker compose up -d`. Cada despliegue deja su imagen etiquetada con el SHA justamente para esto.
 
@@ -178,7 +182,16 @@ El `.env` real vive **solo** en el servidor (`/opt/orbita-api/.env`); nunca en e
 - **Desarrollo local:** como no tienes ese contenedor, entrega un `docker-compose.dev.yml` en el repo con un Postgres de desarrollo (base `orbita`, mismo rol y esquema, puerto local `5432`) para trabajar. Es solo para tu máquina; nunca se despliega.
 - `DATABASE_URL`: en producción el host es el nombre del contenedor, **no** `localhost`: `postgresql://orbita_app:PASS@atm-postgres:5432/orbita?search_path=orbita`. En local, `localhost`.
 - Tablas `snake_case` plural, columnas `snake_case`, UUID v7, `TIMESTAMPTZ`, `NUMERIC(14,2)` para dinero, `VARCHAR(n)` con tamaño. Casi nada se borra: `is_active`/`archived_at` para catálogos.
-- **Solo migraciones versionadas** (goose); el esquema jamás se toca a mano. Las migraciones deben ser seguras de aplicar con la versión anterior aún corriendo (agregar antes que quitar).
+### 7.1 Migraciones (regla principal del proyecto)
+El usuario trabaja **siempre con migraciones**, como Prisma: el esquema evoluciona por pasos versionados y nada se altera a mano ni se recrea.
+- **goose** guarda en la base una tabla de control (`goose_db_version`, dentro del esquema `orbita`) con las migraciones ya aplicadas. En cada despliegue el servicio `migrate` aplica solo las pendientes, en orden.
+- Un archivo por cambio en `db/migrations/`, numerado y con nombre descriptivo que incluya el módulo (`00003_ledger_add_entries_table.sql`), con sus secciones `-- +goose Up` y `-- +goose Down`.
+- **Una migración aplicada nunca se edita.** Si hay que corregir o cambiar tablas existentes (añadir, renombrar o rehacer columnas), se crea una migración **nueva**.
+- Cambios grandes (varias tablas nuevas + modificar las existentes) se parten en migraciones pequeñas y ordenadas, cada una revisable.
+- Deben ser **seguras con la versión anterior aún corriendo**: primero agregar (columna nullable o con valor por defecto, backfill) y solo después quitar o endurecer en una migración posterior.
+- Antes de aplicar en producción, probarlas en local sobre una base con datos de ejemplo y probar también el `Down`.
+- El servicio `migrate` del compose ya bloquea el despliegue si una migración falla: la versión anterior sigue sirviendo.
+- Nunca se usa auto-migración del ORM ni se ejecuta SQL de esquema a mano en producción.
 
 ---
 
