@@ -59,13 +59,182 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
 
+  /auth/register:
+    post:
+      summary: Crear una cuenta (y su primera sesión)
+      description: |
+        En una sola transacción crea la cuenta, la sesión y todo lo del alta
+        (perfil, categorías y cuenta "Efectivo" llegan con los planes 02 a 04).
+        Límite por IP: LOGIN_RATE_LIMIT_PER_MINUTE.
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email, maxLength: 254 }
+                password: { type: string, minLength: 8, maxLength: 128 }
+                main_currency: { type: string, description: "Del catálogo; por defecto PEN", example: PEN }
+                timezone: { type: string, description: "Zona IANA; inválida o ausente = America/Lima", example: America/Lima }
+      responses:
+        "201":
+          description: Cuenta creada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "409":
+          description: "EMAIL_ALREADY_REGISTERED"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /auth/login:
+    post:
+      summary: Iniciar sesión
+      description: Correo inexistente y contraseña equivocada dan la misma respuesta. Tras 5 fallos seguidos con un correo, espera de 1, 5 y 15 minutos.
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: Sesión abierta
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "401":
+          description: "INVALID_CREDENTIALS"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /auth/refresh:
+    post:
+      summary: Renovar el access token (rota el refresh token)
+      description: Reusar un refresh token ya usado revoca toda la sesión. La app debe renovar de a una petición a la vez.
+      operationId: refresh
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RefreshRequest" }
+      responses:
+        "200":
+          description: Tokens nuevos
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [tokens]
+                    properties:
+                      tokens: { $ref: "#/components/schemas/Tokens" }
+        "401":
+          description: "SESSION_EXPIRED: hay que iniciar sesión de nuevo"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /auth/logout:
+    post:
+      summary: Cerrar la sesión de este dispositivo
+      description: Siempre 204, aunque el token no exista.
+      operationId: logout
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RefreshRequest" }
+      responses:
+        "204": { description: Sesión cerrada }
+  /me:
+    get:
+      summary: La cuenta de quien hace la petición
+      operationId: getMe
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/User" }
+        "401":
+          description: "UNAUTHORIZED"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
 components:
+  responses:
+    ValidationFailed:
+      description: VALIDATION_FAILED, con los campos en details
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    TooManyRequests:
+      description: TOO_MANY_REQUESTS, con la cabecera Retry-After (segundos)
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
   securitySchemes:
     bearer:
       type: http
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    User:
+      type: object
+      required: [id, email, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        created_at: { type: string, format: date-time }
+    Tokens:
+      type: object
+      required: [access_token, access_token_expires_in, refresh_token]
+      properties:
+        access_token: { type: string, description: "JWT HS256; va en Authorization: Bearer" }
+        access_token_expires_in: { type: integer, description: Segundos, example: 900 }
+        refresh_token: { type: string, description: "Opaco; guardarlo cifrado en el dispositivo" }
+    AuthResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [user, tokens]
+          properties:
+            user: { $ref: "#/components/schemas/User" }
+            tokens: { $ref: "#/components/schemas/Tokens" }
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token: { type: string }
     Money:
       type: string
       pattern: '^\d{1,12}(\.\d{1,2})?$'
