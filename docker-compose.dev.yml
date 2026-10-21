@@ -13,7 +13,8 @@
 
 services:
   postgres:
-    image: postgres:18-alpine
+    # La misma versión mayor que producción (atm-postgres corre Postgres 17).
+    image: postgres:17-alpine
     container_name: orbita-postgres-dev
     environment:
       POSTGRES_USER: postgres
@@ -21,7 +22,7 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
-      - orbita-postgres-dev:/var/lib/postgresql
+      - orbita-postgres-dev:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
