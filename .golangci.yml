@@ -1,0 +1,33 @@
+# golangci-lint v2. El check del despliegue lo corre con esta misma
+# configuración: un error aquí tumba el despliegue (AGENT_GUIDE §6.1).
+version: "2"
+
+linters:
+  # Los de siempre (errcheck, govet, ineffassign, staticcheck, unused) y estos:
+  enable:
+    - bodyclose
+    - depguard
+    - errorlint
+    - rowserrcheck
+    - sqlclosecheck
+  settings:
+    depguard:
+      rules:
+        # AGENT_GUIDE §3, regla 1. La regla 4 (un módulo no importa paquetes
+        # internos de otro) la verifica internal/archtest.
+        domain:
+          files:
+            - "**/internal/modules/*/domain/**"
+          deny:
+            - pkg: github.com/gin-gonic/gin
+              desc: domain must stay plain Go
+            - pkg: github.com/jackc/pgx
+              desc: domain must stay plain Go
+            - pkg: net/http
+              desc: domain must stay plain Go
+            - pkg: database/sql
+              desc: domain must stay plain Go
+
+formatters:
+  enable:
+    - gofmt
