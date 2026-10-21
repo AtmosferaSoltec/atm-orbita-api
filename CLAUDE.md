@@ -26,3 +26,7 @@ El workflow de GitHub Actions que corre al actualizar `production` tiene 3 jobs,
 1. **check**: revisa el código y verifica que el proyecto compile.
 2. **build**: construye el proyecto (la imagen) en GitHub, no en el VPS, para no consumir RAM del servidor.
 3. **deploy**: GitHub se conecta al VPS Linux y este obtiene la imagen nueva.
+
+## Para quien implemente el proyecto
+
+Lee [AGENT_GUIDE.md](AGENT_GUIDE.md) completo antes de empezar: describe la arquitectura, el despliegue, el orden de trabajo y las decisiones ya tomadas.
