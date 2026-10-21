@@ -4,7 +4,7 @@ Planes para construir el backend real de la app Android `atm-orbita-android`, si
 
 - Escritos el 21 oct 2026, tras revisar completo el proyecto Android: sus documentos (`docs/01`…`06`, `ORBITA_SPEC.md`, `CLAUDE.md`), el dominio, `data/demo`, los ViewModels, las pantallas y sus pruebas.
 - **Fuente de verdad de las reglas:** el código de Android (`data/demo` y `domain`). Donde sus documentos dicen otra cosa, manda el código y la diferencia queda anotada en el plan.
-- Estado: **en revisión.** No se implementa nada hasta que el usuario apruebe estos planes.
+- Estado: **en revisión.** Decisiones del 21 oct 2026 incorporadas (abajo). No se implementa nada hasta que el usuario apruebe estos planes.
 - Rama: todo en `develop`. Flujo `develop` → `main` → `production`; promover lo decide el usuario.
 
 ## Orden y dependencias
@@ -57,20 +57,19 @@ Reglas de dependencia: las de `AGENT_GUIDE.md` §3. Un módulo nunca importa paq
 
 > **`reports` y los JOIN.** La guía prohíbe consultar tablas de otro módulo. Los reportes suman `transactions` agrupadas por categoría y moneda de la cuenta, todas tablas de `ledger`. Por eso la consulta del reporte **vive en `ledger`** y `reports` la consume por la interfaz `ReportQuery` que expone `ledger`. `reports` agrega las reglas de presentación (porcentajes, orden, moneda principal primero). Ver plan 07.
 
-## Preguntas abiertas (necesito tu respuesta)
+## Decisiones del usuario (21 oct 2026)
 
-| # | Pregunta | Afecta a | Mi recomendación |
+| # | Tema | Decisión | Afecta a |
 |---|---|---|---|
-| P1 | **Recuperar contraseña: ¿enlace o código de 6 dígitos?** La guía (§8) y Android piden un **enlace** de un solo uso de 30 minutos. El 16 oct 2026, en el proyecto anterior (NestJS), decidiste usar un **código de 6 dígitos**. Con enlace, el correo tiene que abrir la app (App Links con un dominio verificado) y hace falta una página web de respaldo; con código, todo pasa dentro de la app | 11, 13 | Código de 6 dígitos: no necesita App Links ni página web, y la pantalla "Enlace enviado" pasa a pedir el código |
-| P2 | **Página web para eliminar la cuenta** (la exige Google Play). El proyecto web está fuera de este alcance. ¿La sirve el API (una página HTML mínima en `orbita-api.atmosferast.com`) o se hará en la web más adelante? | 12 | Página mínima servida por el API, con inicio de sesión y confirmación |
-| P3 | **Revocación inmediata.** ¿El middleware de autenticación comprueba en cada petición que la sesión siga viva (una consulta por índice)? Sin eso, tras cerrar sesión o eliminar la cuenta, el token de acceso sigue sirviendo hasta 15 minutos | 01 | Sí, comprobarla |
-| P4 | **`GET /home`.** El spec de Android pide un endpoint que junte todo Inicio en una petición. Hoy `HomeViewModel` lo arma con 5 repositorios. ¿Se hace el endpoint (menos viajes en el móvil, pero un repositorio nuevo en Android) o Inicio sigue componiendo los endpoints de cada módulo? | 08 | Hacer `GET /home` |
-| P5 | **Verificación de correo.** La guía dice "queda lista, desactivada por configuración". ¿Se implementa ya (apagada) o se deja para cuando se quiera activar? | 11 | Dejarla para después; no se lanza con ella |
-| P6 | **Binario `api` versionado.** El commit `d0b4df1` subió a la raíz un ejecutable de macOS de 20.5 MB (`api`), y `.dockerignore` no lo excluye. ¿Lo quito en `develop` y agrego `/api` a `.gitignore` y `.dockerignore`? | 00 | Sí (Joel debería saberlo) |
-| P7 | **Rama de Android.** El `CLAUDE.md` de Android no define ramas, y su remoto tiene `main` y `chore/remove-supabase`. ¿Los cambios de Android van a `main`, a una rama `develop` nueva, o a una rama por plan? | 13 | Una rama `develop` también en Android |
-| P8 | **Documentos de Android borrados.** En la copia local de `atm-orbita-android`, la carpeta `docs/` está borrada sin commit (los 8 archivos siguen en `HEAD`; los leí desde git). ¿Fue a propósito? Si se restauran, hay que actualizarlos: todavía dicen NestJS + Prisma | 13 | Restaurarlos y actualizar el backend a Go |
-| P9 | **Herramientas locales.** En esta máquina no están Go 1.27, `golangci-lint` ni `sqlc`/`goose`, y Docker no respondía la última vez. Sin ellos no puedo compilar, probar ni levantar el Postgres de desarrollo | 00 | Instalar Go 1.27.3, golangci-lint y Docker Desktop |
-
+| P1 | Recuperar contraseña | **Código de 6 dígitos**, en 3 pasos: pedir el correo → escribir el código → contraseña nueva. Sin enlace, sin App Links ni página web | 11, 13 |
+| P2 | Página web para eliminar la cuenta | **Se omite por ahora.** Queda pendiente antes de publicar en Google Play | 12 |
+| P3 | Revocación inmediata | **Sí**: el middleware comprueba en cada petición que la sesión siga viva | 01 |
+| P4 | `GET /home` | **Sí**, Inicio en una petición | 08 |
+| P5 | Verificación de correo | **Después**; no se lanza con ella | 11 |
+| P6 | Binario `api` en el repo | **Se quita** en `develop` y se ignora en git y Docker | 00 |
+| P7 | Rama de Android | **`develop`** también en `atm-orbita-android` | 13 |
+| P8 | Documentos de Android | Se borraron **a propósito**, para **generarlos de nuevo** con esta forma de trabajo (backend Go) | 13 |
+| P9 | Herramientas locales | Go instalado (`go1.27.3`). **Las pruebas apuntan al Postgres local** del usuario, en su contenedor de Docker | 00 |
 ## Diferencias entre los documentos de Android y su código (manda el código)
 
 | Tema | Documentos | Código (`data/demo`, `domain`) | Qué hace el API |

@@ -87,8 +87,8 @@ Ninguna.
 
 ## Pasos de implementación
 
-1. (Si se aprueba P6) quitar el binario `api` del repo y agregar `/api` a `.gitignore` y `.dockerignore`.
-2. `docker-compose.dev.yml` con Postgres 18 y un script de arranque que crea rol, base y esquema como `provision-db.sql` (más `CREATEDB` solo en local, para la base de pruebas).
+1. Quitar el binario `api` del repo y agregar `/api` a `.gitignore` y `.dockerignore` (decisión del 21 oct 2026).
+2. Base local: el Postgres del usuario en Docker, con la base `orbita`, el rol `orbita_app` y el esquema `orbita` creados con `scripts/provision-db.sql`. **Todas las pruebas de integración apuntan a esa base local** (decisión del 21 oct 2026), con `TEST_DATABASE_URL`; cada prueba crea sus propios usuarios y los borra al terminar. Se entrega además `docker-compose.dev.yml` (guía §7) con el mismo Postgres, para quien no lo tenga.
 3. `internal/platform/config`, `logger`, `clock`, `ids`, `apierror` con sus pruebas.
 4. `money`, `dates` y `text` con los vectores de Android (abajo).
 5. `database` + `tx` + goose embebido; subcomando `migrate`.

@@ -4,7 +4,7 @@
 
 Entregar en **una sola petición** todo lo que muestra Inicio: el ahorro total en las dos monedas, el tipo de cambio, los totales del mes, los últimos movimientos y el aviso de tarjetas de crédito. Menos viajes de red al abrir la app.
 
-**Depende de la pregunta P4.** Si se decide no hacer el endpoint, este plan se reduce a dejar Inicio leyendo los endpoints de cada módulo (como hoy en `HomeViewModel`) y no hay nada que construir en el API.
+**Decisión del usuario (21 oct 2026):** se hace el endpoint.
 
 ## Pantallas de Android que cubre
 

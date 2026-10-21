@@ -43,7 +43,7 @@ Sigue las convenciones de Android (`docs/CLAUDE.md` de ese proyecto): código en
 | `PAYMENT_EXPENSE_LOCKED` | `DataError.PAYMENT_LOCKED` |
 | `SESSION_EXPIRED`, `UNAUTHORIZED` (tras renovar) | **Nuevo** `DataError.SESSION_EXPIRED`: "Tu sesión terminó. Inicia sesión de nuevo." |
 | `TOO_MANY_REQUESTS` | **Nuevo** `DataError.TOO_MANY_REQUESTS`: "Demasiados intentos. Espera un momento." |
-| `RESET_TOKEN_INVALID` | **Nuevo** `DataError.RESET_LINK_INVALID`: "El enlace ya no es válido. Pide uno nuevo." (o el texto del código, según P1) |
+| `RESET_CODE_INVALID` | **Nuevo** `DataError.RESET_CODE_INVALID`: "El código no es válido o ya venció. Pide uno nuevo." |
 | `ACCOUNT_ARCHIVED`, `CATEGORY_ARCHIVED`, `CARD_ARCHIVED`, `ID_CONFLICT`, `INTERNAL_ERROR`, otros | `DataError.UNKNOWN` ("Algo salió mal. Inténtalo de nuevo.") |
 
 Los textos ya están en `ORBITA_SPEC.md` §4.1; los tres nuevos ya tienen su mensaje ahí.
@@ -52,10 +52,10 @@ Los textos ya están en `ORBITA_SPEC.md` §4.1; los tres nuevos ya tienen su men
 
 | Cambio | Plan | Motivo |
 |---|---|---|
-| `DataError` + `SESSION_EXPIRED`, `TOO_MANY_REQUESTS`, `RESET_LINK_INVALID` | 01, 11 | Errores que el modo demo no podía dar |
+| `DataError` + `SESSION_EXPIRED`, `TOO_MANY_REQUESTS`, `RESET_CODE_INVALID` | 01, 11 | Errores que el modo demo no podía dar |
 | `ValidationError` + los códigos de campo nuevos del API que la app pueda mostrar (`CURRENCY_NOT_SUPPORTED`, `AMOUNTS_MUST_MATCH`…) o `UNKNOWN` | 02, 06 | Para no mostrar un error genérico cuando la app ya sabe decir qué pasó |
-| `HomeRepository` (si P4 = sí) | 08 | Inicio en una petición |
-| `AuthRepository.resetPassword(email, code, password)` (si P1 = código) | 11 | El secreto ya no viene en un enlace |
+| `HomeRepository` | 08 | Inicio en una petición (decisión del 21 oct 2026) |
+| `AuthRepository.verifyResetCode(email, code)` y `resetPassword(email, code, password)` | 11 | Recuperación con código de 6 dígitos (decisión del 21 oct 2026) |
 | `DateProvider` con el "hoy" del API | 08 | "Hoy lo decide el API" (regla 9 de `ORBITA_SPEC`); el reloj del teléfono sirve de respaldo |
 
 ## Orden de conexión (una línea en `di/AppModule.kt` por plan)
@@ -78,9 +78,10 @@ Mientras unos repositorios sean reales y otros demo, los datos no cuadran entre 
 
 Para probar la app contra el API con las mismas cifras del modo demo, y para las pruebas de integración de los planes 05 a 10, el API tiene un cargador de los datos de `SampleData.kt` (5 cuentas, 9 categorías, 21 entradas de septiembre y octubre de 2026, 2 tarjetas, 4 compras, 1 US$ = S/ 3.20, "hoy" = 2 oct 2026). Escribe directo en la base, no por los endpoints, porque necesita un saldo inicial negativo y fechas de compra pasadas. Solo en desarrollo y en pruebas (`api seed-dev`, que se niega a correr con `APP_ENV=production`).
 
-## Documentos de Android a actualizar (pregunta P8)
+## Rama y documentos de Android
 
-Los 8 documentos de `atm-orbita-android/docs/` todavía describen el backend como NestJS + PostgreSQL + Prisma y remiten a planes que ya no existen. Con cada plan se corrige lo que toca (la guía §0.8 lo exige). Antes del plan 01 hay que resolver P8: hoy esa carpeta está borrada en la copia local, sin commit.
+- **Rama:** todo el trabajo de Android va en una rama `develop` de `atm-orbita-android`, creada desde `main` (decisión del 21 oct 2026). Pasar a `main` lo decide el usuario.
+- **Documentos:** el usuario borró `atm-orbita-android/docs/` a propósito, para **generarlos de nuevo** con esta forma de trabajo (decisión del 21 oct 2026). Los 8 anteriores describían NestJS + Prisma y remitían a planes que ya no existen. Se regeneran en `develop` junto con el plan 01: `docs/CLAUDE.md` (reglas y estado, con el backend en Go y estos planes como contrato) y `docs/ORBITA_SPEC.md` (especificación funcional, a partir del contenido vigente del anterior y del código). A partir de ahí, cada plan actualiza `ORBITA_SPEC.md` en el mismo cambio (guía §0.8). La versión anterior sigue en el historial de git de Android.
 
 ## Pruebas (Android)
 

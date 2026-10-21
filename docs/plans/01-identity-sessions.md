@@ -86,7 +86,7 @@ Nunca se guarda un token en claro.
 
 - **Rotación.** Cada `refresh` marca el token usado (`used_at`) y entrega uno nuevo de la misma sesión, en una transacción con actualización condicionada (`WHERE used_at IS NULL AND expires_at > now()`): dos renovaciones simultáneas no pueden usar el mismo.
 - **Reutilización.** Si llega un refresh ya usado, se revoca la sesión entera (`revoked_reason = 'reuse'`) y se registra el evento. Android ya serializa la renovación con un `Mutex` (docs/02), así que no debería pasar con la app legítima.
-- **Verificación del acceso.** El middleware exige exactamente HS256 (rechaza `alg: none` y cualquier otro), firma y `exp`. **Pregunta P3:** además comprueba que la sesión `sid` siga sin revocar, para que cerrar sesión o eliminar la cuenta corte el acceso al instante.
+- **Verificación del acceso.** El middleware exige exactamente HS256 (rechaza `alg: none` y cualquier otro), firma y `exp`, y **comprueba que la sesión `sid` siga sin revocar** (decisión del 21 oct 2026), para que cerrar sesión o eliminar la cuenta corte el acceso al instante. Es una consulta por clave primaria por petición.
 - `@Public` no existe en Gin: las rutas públicas se montan en un grupo sin el middleware. Todo lo demás está protegido.
 - `user_id` sale **solo** del token; ningún request lo acepta.
 
@@ -131,7 +131,7 @@ Android: registrarse, cerrar la app, reabrirla y seguir con sesión; cerrar sesi
 ## Criterios de aceptación
 
 - Un usuario nuevo se registra desde la app, la cierra, la reabre al día siguiente y sigue con sesión.
-- Cerrar sesión impide renovar; con P3 aprobada, también impide usar el acceso vigente.
+- Cerrar sesión impide renovar y también usar el acceso vigente.
 - Ninguna contraseña ni token aparece en claro en la base ni en los logs.
 
 ## Variables nuevas para el servidor

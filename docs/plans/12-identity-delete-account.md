@@ -2,7 +2,9 @@
 
 ## Objetivo
 
-Que una persona borre su cuenta y **todos** sus datos de verdad (no un archivado ni un borrado lógico), desde la app y desde una página web. Es **requisito de salida a producción** y de Google Play.
+Que una persona borre su cuenta y **todos** sus datos de verdad (no un archivado ni un borrado lógico), desde la app. Es **requisito de salida a producción** y de Google Play.
+
+**Decisión del usuario (21 oct 2026):** la página web para eliminar la cuenta sin la app **se omite por ahora**. Google Play la exige en la ficha, así que queda pendiente antes de publicar.
 
 ## Pantallas de Android que cubre
 
@@ -18,7 +20,6 @@ Que una persona borre su cuenta y **todos** sus datos de verdad (no un archivado
 | Método y ruta | Request | Respuesta |
 |---|---|---|
 | `DELETE /me` | `{ "password" }` | `204`; borra al usuario y todos sus datos, y termina sus sesiones |
-| *(P2)* `GET /account/delete` y `POST /account/delete` | Formulario: correo y contraseña | Página HTML mínima, en español, para eliminar la cuenta sin la app |
 
 ### Errores
 
@@ -36,12 +37,12 @@ Ninguna nueva. Se apoya en que **toda tabla con `user_id` lo referencia con `ON 
 
 - Exige la contraseña actual aunque el token sea válido: un teléfono desbloqueado en manos ajenas no basta.
 - **Borrado real**, en una transacción: verificar la contraseña → ganchos `OnUserDeleted` (hoy ninguno los necesita; quedan para archivos en R2 u otros datos fuera de la base) → `DELETE FROM users`. La cascada se lleva el resto. Si algo falla, no se borra nada.
-- Las sesiones desaparecen con el usuario: con P3 aprobada, el token de acceso vigente deja de servir al instante.
+- Las sesiones desaparecen con el usuario y el middleware lo comprueba en cada petición (plan 01): el token de acceso vigente deja de servir al instante.
 - El correo queda libre: la misma persona puede registrarse otra vez y empieza de cero.
 - No hay periodo de gracia ni papelera.
 - Se registra el evento con el id del usuario, sin su correo.
 - Los respaldos conservan los datos hasta que caducan; debe decirlo la política de privacidad.
-- **Página web** (P2): si la sirve el API, son dos rutas HTML sin JavaScript de terceros, con el mismo límite de intentos y una confirmación explícita. Es la URL que se declara en la ficha de Google Play.
+- **Página web**: pendiente (ver arriba). Cuando se haga, usa el mismo caso de uso.
 
 ## Dependencias
 
@@ -50,7 +51,7 @@ Ninguna nueva. Se apoya en que **toda tabla con `user_id` lo referencia con `ON 
 ## Pasos de implementación
 
 1. Caso de uso `DeleteAccount` y gancho `OnUserDeleted`.
-2. Adapter HTTP de `DELETE /me` (y la página, según P2).
+2. Adapter HTTP de `DELETE /me`.
 3. Prueba que **descubre sola las tablas**: consulta el catálogo de Postgres, toma todas las del esquema `orbita` con columna `user_id`, crea un usuario con datos en todas, lo elimina y comprueba que no queda ninguna fila suya. Una tabla nueva sin cascada hace fallar la prueba.
 4. Android: `RemoteAuthRepository.deleteAccount` (limpia los tokens y la sesión local al terminar).
 5. `ORBITA_SPEC.md` §7.12 y OpenAPI.
@@ -67,7 +68,6 @@ Integración:
 ## Criterios de aceptación
 
 - Desde Ajustes, eliminar la cuenta borra todo y vuelve a Iniciar sesión.
-- La misma eliminación se puede hacer sin la app (P2).
 
 ## Variables nuevas para el servidor
 

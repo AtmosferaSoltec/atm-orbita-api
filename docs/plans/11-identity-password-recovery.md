@@ -2,15 +2,22 @@
 
 ## Objetivo
 
-Que quien olvidó su contraseña la recupere por correo, sin que nadie pueda saber qué correos están registrados. Es **requisito de salida a producción**.
+Que quien olvidó su contraseña la recupere con un **código de 6 dígitos** que llega por correo, sin que nadie pueda saber qué correos están registrados. Es **requisito de salida a producción**.
 
-> **Pendiente de la pregunta P1: ¿enlace o código de 6 dígitos?** La guía (§8) y Android piden un **enlace** de un solo uso que vence en 30 minutos. El 16 oct 2026 se había decidido un **código de 6 dígitos** (en el proyecto anterior). Este plan describe las dos variantes; al aprobarlo se borra la que no se use. La recomendación es el código: todo pasa dentro de la app, sin App Links ni página web.
+**Decisión del usuario (21 oct 2026):** código de 6 dígitos en tres pasos, **pedir el correo → escribir el código → contraseña nueva**. Sustituye al enlace de un solo uso que describían la guía (§8) y Android: no hacen falta App Links ni una página web.
 
 ## Pantallas de Android que cubre
 
-- **¿Olvidaste tu contraseña?**, **Enlace enviado** y **Contraseña nueva** (`ui/feature/auth/PasswordRecoveryScreens.kt`; `ORBITA_SPEC` §7.1).
-- Iniciar sesión con el aviso "Tu contraseña se cambió. Inicia sesión con la nueva."
-- Repositorio: `AuthRepository.requestPasswordReset(email)` y `resetPassword(token, newPassword)`.
+Las tres de `ui/feature/auth/PasswordRecoveryScreens.kt` (`ORBITA_SPEC` §7.1), con el segundo paso cambiado:
+
+| Paso | Pantalla hoy | Con este plan |
+|---|---|---|
+| 1 | "Recupera tu contraseña": pide el correo | Igual; el texto dice "te enviaremos un código" |
+| 2 | "Revisa tu correo": enlace enviado (y en demo, "abrir la pantalla del enlace") | **"Escribe el código"**: campo de 6 dígitos, "Vence en 15 minutos", "Pedir otro código" |
+| 3 | "Crea una contraseña nueva" (se abría desde el enlace) | Igual; se llega tras validar el código |
+
+- Iniciar sesión muestra después "Tu contraseña se cambió. Inicia sesión con la nueva."
+- Repositorio: `AuthRepository.requestPasswordReset(email)`; `resetPassword(token, newPassword)` pasa a `verifyResetCode(email, code)` y `resetPassword(email, code, newPassword)` (cambio de Android, plan 13).
 
 ## Módulos
 
@@ -21,52 +28,49 @@ Que quien olvidó su contraseña la recupere por correo, sin que nadie pueda sab
 | Método y ruta | Público | Request | Respuesta |
 |---|---|---|---|
 | `POST /auth/forgot-password` | Sí | `{ "email" }` | `204` **siempre**, exista o no el correo |
-| *(solo código)* `POST /auth/verify-reset-code` | Sí | `{ "email", "code" }` | `204` si es válido, sin consumirlo |
-| `POST /auth/reset-password` | Sí | Enlace: `{ "token", "new_password" }` · Código: `{ "email", "code", "new_password" }` | `204`; cambia la contraseña y revoca todas las sesiones |
+| `POST /auth/verify-reset-code` | Sí | `{ "email", "code" }` | `204` si es válido; **no lo consume** (cuenta como intento si falla) |
+| `POST /auth/reset-password` | Sí | `{ "email", "code", "new_password" }` | `204`; cambia la contraseña y revoca todas las sesiones |
 
 ### Errores
 
 | Situación | HTTP | `code` | Texto en Android |
 |---|---|---|---|
 | Correo con formato inválido | 400 | `VALIDATION_FAILED` + `EMAIL_INVALID` | "Escribe un correo válido." |
-| Contraseña nueva de menos de 8 | 400 | `VALIDATION_FAILED` + `PASSWORD_TOO_SHORT` | El enlace o el código **no** se consume |
-| Enlace o código inválido, usado, vencido o sin intentos | 422 | `RESET_TOKEN_INVALID` | "El enlace ya no es válido. Pide uno nuevo." (o "El código no es válido o ya venció.") |
+| Código que no son 6 dígitos | 400 | `VALIDATION_FAILED` + `CODE_INVALID` | "Escribe los 6 dígitos del código." |
+| Contraseña nueva de menos de 8 | 400 | `VALIDATION_FAILED` + `PASSWORD_TOO_SHORT` | El código **no** se consume |
+| Código incorrecto, usado, vencido o sin intentos | 422 | `RESET_CODE_INVALID` | "El código no es válido o ya venció. Pide uno nuevo." |
 | Demasiadas peticiones | 429 | `TOO_MANY_REQUESTS` | "Demasiados intentos. Espera un momento." |
+
+Los dos textos nuevos se agregan a `ORBITA_SPEC.md` §4.1 (y reemplazan "El enlace ya no es válido").
 
 ## Tablas y migraciones
 
-`00010_identity_create_password_resets.sql`:
+`00010_identity_create_password_reset_codes.sql`:
 
 | Columna | Tipo |
 |---|---|
 | `id` | `UUID PK` |
 | `user_id` | `UUID FK → users ON DELETE CASCADE` |
-| `secret_hash` | `BYTEA NOT NULL` (SHA-256 del enlace, o HMAC del código) |
-| `expires_at` | `TIMESTAMPTZ` |
+| `code_hash` | `BYTEA NOT NULL` (HMAC-SHA256 del código con `JWT_ACCESS_SECRET` como clave derivada, para que 6 dígitos no se puedan probar contra la base si se filtra) |
+| `expires_at` | `TIMESTAMPTZ NOT NULL` |
+| `attempts` | `SMALLINT NOT NULL DEFAULT 0` |
 | `used_at` | `TIMESTAMPTZ NULL` |
-| `attempts` | `SMALLINT NOT NULL DEFAULT 0` (solo código) |
 | `created_at` | `TIMESTAMPTZ` |
 
 Índice `(user_id) WHERE used_at IS NULL`.
 
 ## Reglas
 
-| | Enlace (guía y Android) | Código (recomendado) |
-|---|---|---|
-| Secreto | 32 bytes aleatorios en base64url, en el enlace | 6 dígitos de un generador criptográfico |
-| Guardado | Solo su hash | Solo su hash |
-| Vida | 30 minutos | 15 minutos |
-| Intentos | — | 5 por código; luego queda inválido |
-| Cómo llega a la app | App Links: el correo abre `https://…/reset-password#token=…` en la app (dominio verificado con `assetlinks.json`), o una página web de respaldo si no está instalada | El usuario lo escribe en la pantalla que hoy es "Enlace enviado" |
-
-Comunes a las dos:
-- `forgot-password` responde `204` siempre y tarda lo mismo exista o no el correo. Si existe, invalida los anteriores pendientes y envía uno nuevo. Hasta 3 envíos por usuario cada 24 horas; además, el límite por IP.
-- `reset-password` en una transacción: comprueba el secreto con una actualización condicionada (`WHERE used_at IS NULL AND expires_at > now()`), guarda el hash de la contraseña nueva, marca el secreto usado y **revoca todas las sesiones** del usuario. No inicia sesión: la app vuelve a Iniciar sesión.
+- **Código**: 6 dígitos de un generador criptográfico (`crypto/rand`). Se guarda solo su hash. Vida **15 minutos**.
+- **Intentos**: hasta **5 por código** (seis dígitos son un millón de combinaciones; sin tope, un script los prueba). Al quinto fallo el código queda inválido. Además, límite por IP en `verify-reset-code` y `reset-password`.
+- **Envíos**: `forgot-password` responde `204` siempre y tarda lo mismo exista o no el correo. Si existe, invalida los códigos pendientes y envía uno nuevo. Hasta **3 envíos por usuario cada 24 horas**; el cuarto responde `204` sin enviar nada.
+- **`verify-reset-code`** solo dice si el código sirve, para pasar a la pantalla de contraseña nueva; no lo marca usado.
+- **`reset-password`**, en una transacción: comprueba el código con una actualización condicionada (`WHERE used_at IS NULL AND expires_at > now() AND attempts < 5`), guarda el hash de la contraseña nueva, marca el código usado y **revoca todas las sesiones** del usuario. No inicia sesión: la app vuelve a Iniciar sesión.
 - Tras cambiarla se envía un segundo correo, "Tu contraseña se cambió", para que el dueño se entere si no fue él.
-- **Correo**: `ResendMailer` (SDK HTTP de Resend o `net/http` contra su API) detrás de `Mailer`; plantillas **MJML** compiladas a HTML en build (`html/template` para los datos), en español (es-PE), con versión en texto plano. Remitente `MAIL_FROM` del dominio `atmosferast.com` verificado en Resend.
-- **Envío asíncrono con reintentos**, nunca dentro de la transacción: la respuesta no espera al correo. Si Resend falla, se reintenta con espera creciente y se registra; la respuesta al cliente no cambia.
-- No se registra el contenido del correo, ni el enlace, ni el código.
-- **Verificación de correo** (P5): con la misma tabla y el mismo correo; queda fuera de este plan salvo que se decida otra cosa.
+- **Correo**: `ResendMailer` (API HTTP de Resend con `net/http`) detrás de `Mailer`; plantillas **MJML** compiladas a HTML en build y completadas con `html/template`; en español (es-PE), con versión en texto plano; el código en grande. Remitente `MAIL_FROM` del dominio `atmosferast.com` verificado en Resend. Sin `RESEND_API_KEY` en desarrollo, el correo (y el código) se escribe en el log.
+- **Envío asíncrono con reintentos**, fuera de la transacción: la respuesta no espera al correo. Si Resend falla, se reintenta con espera creciente y se registra.
+- No se registra el código ni el contenido del correo en producción.
+- **Verificación de correo**: fuera de este plan (decisión del 21 oct 2026: después).
 
 ## Dependencias
 
@@ -75,32 +79,33 @@ Comunes a las dos:
 ## Pasos de implementación
 
 1. Migración y consultas sqlc.
-2. Dominio y casos de uso `RequestReset`, (`VerifyCode`), `ResetPassword`.
-3. `integrations/mail`: `ResendMailer`, plantillas MJML y su compilación en build, cola de envío con reintentos.
+2. Dominio y casos de uso `RequestReset`, `VerifyCode`, `ResetPassword`.
+3. `integrations/mail`: `ResendMailer`, plantillas MJML y su compilación, cola de envío con reintentos.
 4. Adapter HTTP.
-5. Android: `RemoteAuthRepository.requestPasswordReset` y `resetPassword`. Con enlace: App Links en el manifiesto y `assetlinks.json` en el dominio. Con código: la pantalla "Enlace enviado" pasa a pedir el código, y `resetPassword(token, …)` cambia a `resetPassword(email, code, …)`.
-6. Actualizar `ORBITA_SPEC.md` (§7.1 y §4.1), `docs/openapi.yaml` y `.env.example` si hiciera falta.
+5. Android: la pantalla del paso 2 pide el código; `AuthRepository` con `verifyResetCode` y `resetPassword(email, code, password)`; el modo demo acepta cualquier código de 6 dígitos.
+6. `ORBITA_SPEC.md` (§7.1 y §4.1) y `docs/openapi.yaml`.
 
 ## Pruebas
 
 Integración (con un `Mailer` que captura los correos):
-- Correo existente → `204` y un correo capturado; inexistente → `204`, ningún correo, tiempo similar.
-- La base guarda el hash, nunca el secreto.
-- `reset-password` con el secreto del correo → `204`; la contraseña nueva sirve y la vieja no; las sesiones anteriores no renuevan.
-- Reusar el secreto → `422`. Dos usos simultáneos → uno `204`, otro `422`.
-- Vencido (reloj adelantado) → `422`. Pedir dos y usar el primero → `422`.
-- (Código) sexto intento con un código equivocado y luego el correcto → `422`.
-- Contraseña nueva de 7 caracteres → `400` y el secreto sigue sirviendo.
+- Correo existente → `204` y un correo capturado con 6 dígitos; inexistente → `204`, ningún correo, tiempo similar.
+- La base guarda el hash, nunca el código.
+- `verify-reset-code` con el código → `204` y el código sigue sirviendo.
+- `reset-password` con el código → `204`; la contraseña nueva sirve y la vieja no; las sesiones anteriores ya no sirven.
+- Reusar el código → `422`. Dos `reset-password` simultáneos → uno `204`, otro `422`.
+- Vencido (reloj adelantado 16 minutos) → `422`. Pedir dos y usar el primero → `422`.
+- Cinco intentos fallidos y luego el correcto → `422`.
+- Contraseña nueva de 7 caracteres → `400` y el código sigue sirviendo.
 - Cuarto envío en 24 horas → `204` y ningún correo.
 
 ## Criterios de aceptación
 
-- Recuperar la contraseña de principio a fin con un correo real que llega a la bandeja de entrada (no a no deseado) de Gmail y Outlook, con SPF, DKIM y DMARC en `pass`.
+- Recuperar la contraseña de principio a fin desde la app, con un correo real que llega a la bandeja de entrada (no a no deseado) de Gmail y Outlook, con SPF, DKIM y DMARC en `pass`.
 
 ## Variables nuevas para el servidor
 
-Ninguna obligatoria: `RESEND_API_KEY` y `MAIL_FROM` ya existen. Con enlace, una variable nueva para la URL base del enlace (por ejemplo `PASSWORD_RESET_URL`); se informará al implementar.
+Ninguna: `RESEND_API_KEY` y `MAIL_FROM` ya existen.
 
 ## Desviaciones
 
-(Se completan al implementar.)
+- Código de 6 dígitos en lugar del enlace de la guía §8 (decisión del usuario, 21 oct 2026). Al implementarlo se actualiza también la guía.
