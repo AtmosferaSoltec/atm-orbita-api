@@ -151,7 +151,24 @@ Implementado en API y Android, en revisión.
 | Binario real por HTTP | Registro 201, `/me` 200, renovación 200, reuso del refresh viejo 401 y la sesión queda revocada, `logout` 204 y luego `/me` 401 |
 | Android: `testDebugUnitTest`, `assembleDebug`, `lintDebug` | Pasa: 45 pruebas (10 nuevas de la sesión remota, con servidor simulado: errores, validación, sin red, sesión guardada, cierre sin red, **5 peticiones con el token vencido = 1 renovación**, renovación rechazada) |
 
-No probado todavía: la app en un teléfono contra el API local (no había ninguno conectado). Para hacerlo: `API_BASE_URL=http://<IP de la PC>:3001/api/v1` en `local.properties` y la variante debug.
+**En el teléfono** (I24P01, Android 13), con la app debug contra el binario del API y el Postgres local (por USB con `adb reverse tcp:3001 tcp:3001` y `API_BASE_URL=http://127.0.0.1:3001/api/v1`):
+
+| Prueba | Resultado |
+|---|---|
+| Registro con un correo mal escrito | "Escribe un correo válido." (validación de la app, no llega al API) |
+| Registro válido | Entra a Inicio; en la base, el usuario y 1 sesión |
+| Cerrar la app y volver a abrirla | Sigue con sesión |
+| Abrirla con el API apagado | Sigue con sesión (sin red) |
+| Ajustes → Cerrar sesión | Vuelve a Iniciar sesión; en la base, la sesión revocada con motivo `logout` |
+| Contraseña equivocada | "Correo o contraseña incorrectos." |
+| Contraseña correcta | Entra; sesión nueva en la base |
+| Registro con el mismo correo en mayúsculas | "Ese correo ya tiene una cuenta. Inicia sesión." |
+| Iniciar sesión con el API apagado | "Sin conexión. Revisa tu internet e inténtalo de nuevo." |
+| Agente de la sesión | `Orbita-Android/1.0 (Android 13; I24P01)` |
+
+Para probarlo por Wi-Fi en lugar de USB: `API_BASE_URL=http://<IP de la PC>:3001/api/v1` y permitir el puerto 3001 en el firewall de Windows.
+
+Aún no se ve en la app: que la sesión caducada en el servidor devuelva a Iniciar sesión. Ninguna pantalla llama todavía a una ruta privada (todo lo demás sigue en datos de ejemplo); lo cubren las pruebas unitarias de `ApiSession` y se verá en el teléfono desde el plan 02.
 
 ## Desviaciones
 
@@ -164,4 +181,5 @@ No probado todavía: la app en un teléfono contra el API local (no había ningu
 - **Error de lint ya existente en Android** (`OrbitaApp.kt`: leía textos con `LocalContext`): corregido con `LocalResources`, porque bloqueaba `lintDebug`.
 - **sqlc se corre con su imagen de Docker** (necesita cgo, que no hay en Windows); el código generado se versiona, así el check del despliegue no lo necesita.
 - **`PasswordParams`** en las dependencias del módulo: las pruebas bajan el costo de argon2id; en producción se usan 64 MiB, 3 pasadas, 1 hilo.
+- **Agente de la app**: Android se identifica como `Orbita-Android/<versión> (Android <versión>; <modelo>)`, que el API guarda en `sessions.user_agent` (antes llegaba `ktor-client`).
 - **Documentos de Android regenerados**: `docs/CLAUDE.md` nuevo y `docs/ORBITA_SPEC.md` a partir del anterior; los `01` a `06` se retiran y su contenido vigente pasa al spec (tokens de diseño, casos de prueba, datos de ejemplo).
