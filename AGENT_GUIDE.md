@@ -203,7 +203,7 @@ El `.env` real vive **solo** en el servidor (`/opt/orbita-api/.env`); nunca en e
 El pipeline, el `Dockerfile` y el compose ya están listos (sección 6). Lo único pendiente de tu parte aquí: confirma que `ci.yml` pasa en verde en `develop` con el primer push, y construye sobre la base (`cmd/api/main.go` es solo un esqueleto mínimo; reemplázalo por la estructura de la sección 3). **No dispares un despliegue**: eso lo decide el usuario al promover a `production`.
 
 ### Paso 2 · Revisar TODO el proyecto Android
-Antes de planificar, lee `../atm-orbita-android` completo: no es opcional ni se resume.
+Antes de planificar, lee el proyecto `atm-orbita-android` completo: no es opcional ni se resume.
 - `docs/CLAUDE.md` y `docs/01` … `docs/06` y `docs/ORBITA_SPEC.md`.
 - El código: capas `domain`, `data/demo`, `ui`, los ViewModels, los modelos, las reglas de dinero y monedas, las 8+ pantallas y cada flujo (login, registro, recuperar contraseña, inicio, movimientos, cuentas, categorías, tarjetas de crédito, ajustes, eliminar cuenta, etc.).
 - Entiende **cómo funcionan las maquetas y qué hace cada funcionalidad**, qué datos necesita cada pantalla y qué reglas aplica `data/demo` (esas reglas son la especificación que la API debe reproducir de verdad).
@@ -239,7 +239,7 @@ Un plan = una funcionalidad que se puede entregar, probar y revisar sola. Si es 
 Con la aprobación del usuario, ejecuta los planes **en orden y de a uno**. Por cada plan:
 1. Implementa el módulo de la API según el plan, respetando la sección 3.
 2. Pruebas unitarias del dominio y de los casos de uso (con puertos falsos) + pruebas de integración de los adapters de Postgres y de los endpoints.
-3. Conecta la parte correspondiente de Android: cliente HTTP, repositorio `data/remote` y el cambio de línea en `di/AppModule.kt` (ver `../atm-orbita-android/docs/04-guia-api.md`). Sigue las convenciones de ese proyecto (su `docs/CLAUDE.md`).
+3. Conecta la parte correspondiente de Android: cliente HTTP, repositorio `data/remote` y el cambio de línea en `di/AppModule.kt` (ver `docs/04-guia-api.md` de ese proyecto). Sigue las convenciones de ese proyecto (su `docs/CLAUDE.md`).
 4. Actualiza plan, OpenAPI y `ORBITA_SPEC.md`.
 5. Resume, **pide revisión** y espera antes del siguiente.
 
