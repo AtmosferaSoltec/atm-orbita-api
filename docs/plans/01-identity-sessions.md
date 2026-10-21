@@ -138,6 +138,30 @@ Android: registrarse, cerrar la app, reabrirla y seguir con sesión; cerrar sesi
 
 Ninguna (`JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_DAYS` y `LOGIN_RATE_LIMIT_PER_MINUTE` ya existen).
 
+## Estado (21 oct 2026)
+
+Implementado en API y Android, en revisión.
+
+| Comprobación | Resultado |
+|---|---|
+| `go vet`, `golangci-lint run`, `go build` | Sin problemas (`0 issues`) |
+| `go test ./...` sin base | Pasa; las de integración se saltan |
+| `go test ./...` contra el Postgres local | Pasa: 3 del dominio, 11 unitarias de los casos de uso, 6 de seguridad (argon2id y JWT: vencido, otra firma, alterado, `alg: none`, HS512) y 9 de integración por HTTP (ciclo completo, hashes en la base, correo repetido con otras mayúsculas, orden de validación, mismo error para clave mala y correo inexistente, dos renovaciones simultáneas, gancho de alta que falla sin dejar nada, rutas protegidas, sexto login limitado) |
+| Migración `00001`: `up`, `down`, `up` | Funciona; el esquema `orbita` queda con `users`, `sessions` y `refresh_tokens` |
+| Binario real por HTTP | Registro 201, `/me` 200, renovación 200, reuso del refresh viejo 401 y la sesión queda revocada, `logout` 204 y luego `/me` 401 |
+| Android: `testDebugUnitTest`, `assembleDebug`, `lintDebug` | Pasa: 45 pruebas (10 nuevas de la sesión remota, con servidor simulado: errores, validación, sin red, sesión guardada, cierre sin red, **5 peticiones con el token vencido = 1 renovación**, renovación rechazada) |
+
+No probado todavía: la app en un teléfono contra el API local (no había ninguno conectado). Para hacerlo: `API_BASE_URL=http://<IP de la PC>:3001/api/v1` en `local.properties` y la variante debug.
+
 ## Desviaciones
 
-(Se completan al implementar.)
+- **`PASSWORD_TOO_LONG`**: código de campo nuevo (más de 128 caracteres). Android lo agrega a `ValidationError`, con su texto, y también lo valida antes de enviar.
+- **Catálogo de monedas en `internal/platform/currency`**: lo necesita el registro (validar `main_currency`) y lo usará el perfil (plan 02). Es un dato, no una regla.
+- **Dos renovaciones simultáneas con el mismo token**: una responde 200 y la otra 401, y como la segunda cuenta como reuso, **la sesión queda revocada** (regla de reutilización). Android nunca lo provoca porque renueva de a una (`Mutex`).
+- **Sesión al abrir la app**: con un refresh token guardado la app entra directo, **sin red**; el access token se pide en la primera petición. Si la renovación se rechaza, vuelve a Iniciar sesión.
+- **Con `API_BASE_URL`, recuperar contraseña y eliminar cuenta fallan** con "Algo salió mal" hasta los planes 11 y 12, en lugar de fingir que funcionan.
+- **`network_security_config`**: no existía. Release solo HTTPS; debug permite HTTP sin cifrar hacia el API local.
+- **Error de lint ya existente en Android** (`OrbitaApp.kt`: leía textos con `LocalContext`): corregido con `LocalResources`, porque bloqueaba `lintDebug`.
+- **sqlc se corre con su imagen de Docker** (necesita cgo, que no hay en Windows); el código generado se versiona, así el check del despliegue no lo necesita.
+- **`PasswordParams`** en las dependencias del módulo: las pruebas bajan el costo de argon2id; en producción se usan 64 MiB, 3 pasadas, 1 hilo.
+- **Documentos de Android regenerados**: `docs/CLAUDE.md` nuevo y `docs/ORBITA_SPEC.md` a partir del anterior; los `01` a `06` se retiran y su contenido vigente pasa al spec (tokens de diseño, casos de prueba, datos de ejemplo).
