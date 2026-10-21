@@ -105,7 +105,6 @@ docs/
 - Integraciones externas (correo, R2, tipo de cambio) detrás de puertos y **nunca bloquean** la ruta crítica: si Resend falla, el registro igual se completa y el correo se reintenta.
 - `GET /api/v1/health` (liveness) y `GET /api/v1/health/ready` (comprueba la BD).
 - Desplegar una versión mala se revierte en minutos relanzando el tag anterior (ver sección 6).
-- Cada módulo se puede apagar por configuración si algún día hace falta (`MODULES_ENABLED`), sin tocar el resto.
 
 ---
 
@@ -132,7 +131,7 @@ Autenticación (detalles en su plan, con las decisiones de la sección 11):
 
 Los **nombres** están en `.env.example` (sin valores). El usuario llena el `.env`. Cada variable nueva se agrega a `.env.example` con un comentario, y a la validación de arranque. El `.env` real nunca se sube a git.
 
-Grupos: `APP_ENV`, `PORT`, `DATABASE_URL`, `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_DAYS`, `CORS_ORIGIN`, límites de rate limit, `RESEND_API_KEY`, `MAIL_FROM`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `MODULES_ENABLED`.
+Grupos: `APP_ENV`, `PORT`, `DATABASE_URL`, `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_DAYS`, `CORS_ORIGIN`, límites de rate limit, `RESEND_API_KEY`, `MAIL_FROM`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`.
 
 ---
 
@@ -161,11 +160,11 @@ Los secrets del repo (`SSH_HOST`, `SSH_USER`, `SSH_KEY`) ya están configurados.
 ### 6.3 El `.env` de producción y la base de datos (ya preparados en el servidor)
 El `.env` real vive **solo** en el servidor (`/opt/orbita-api/.env`); nunca en el repo. **El usuario ya creó en el servidor** la base `orbita`, el rol `orbita_app`, el esquema `orbita` (con `scripts/provision-db.sql`) y un `.env` inicial con estas variables ya con valor:
 
-`APP_ENV`, `PORT`, `DATABASE_URL`, `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL_SECONDS` (900), `REFRESH_TOKEN_TTL_DAYS` (30), `RATE_LIMIT_PER_MINUTE`, `LOGIN_RATE_LIMIT_PER_MINUTE`.
+`APP_ENV`, `PORT`, `DATABASE_URL`, `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL_SECONDS` (900), `REFRESH_TOKEN_TTL_DAYS` (30), `CORS_ORIGIN` (`https://orbita.atmosferast.com`, el dominio de la futura web), `RATE_LIMIT_PER_MINUTE`, `LOGIN_RATE_LIMIT_PER_MINUTE`, `RESEND_API_KEY`, `MAIL_FROM`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` y `R2_BUCKET`.
 
 No conoces sus valores y no los necesitas: tu código solo lee esos nombres. Con eso, un despliegue del esqueleto actual funciona tal cual.
 
-**Cada vez que tu código lea una variable nueva** (por ejemplo `RESEND_API_KEY`, `MAIL_FROM`, `CORS_ORIGIN`, `R2_*`, `MODULES_ENABLED`):
+**Cada vez que tu código lea una variable nueva** (las de arriba ya existen; cualquier otra es nueva):
 1. Agrégala a `.env.example` con un comentario de qué es y qué valor lleva en producción.
 2. Haz que la validación de arranque falle con un mensaje claro si falta una obligatoria (así un `.env` incompleto se nota en el deploy, no en producción).
 3. **Antes de pedir que se promueva a `production`**, entrégale al usuario la lista exacta de variables **nuevas** que debe agregar al `.env` del servidor (cuáles obligatorias, cuáles opcionales, y cuáles debe generar, por ejemplo con `openssl rand -base64 48`). Él las sube y te avisa; recién entonces se promueve.
