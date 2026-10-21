@@ -199,7 +199,7 @@ El usuario trabaja **siempre con migraciones**, como Prisma: el esquema evolucio
 
 - **Resend** detrás de un puerto `Mailer` en `internal/integrations/mail` (hay una implementación `console` para desarrollo que escribe el correo en el log). En producción las variables son obligatorias.
 - Plantillas escritas en **MJML**, compiladas a HTML en build, con `html/template` para los datos. Todo el texto en español (es-PE).
-- Correos mínimos: recuperar contraseña (con enlace de un solo uso y caducidad corta). Verificación de correo queda lista pero desactivada por configuración.
+- Correos mínimos: recuperar contraseña con un **código de 6 dígitos** (decisión del usuario, 21 oct 2026): vence a los 15 minutos, admite 5 intentos por código y hasta 3 envíos por usuario cada 24 horas; se guarda solo su hash. La app lo pide en tres pasos: correo → código → contraseña nueva (ver `docs/plans/11-identity-password-recovery.md`). Verificación de correo: se hará más adelante.
 - Envío asíncrono con reintentos; nunca dentro de la transacción del caso de uso.
 
 ## 9. Almacenamiento (Cloudflare R2)

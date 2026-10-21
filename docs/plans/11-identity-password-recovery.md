@@ -108,4 +108,4 @@ Ninguna: `RESEND_API_KEY` y `MAIL_FROM` ya existen.
 
 ## Desviaciones
 
-- Código de 6 dígitos en lugar del enlace de la guía §8 (decisión del usuario, 21 oct 2026). Al implementarlo se actualiza también la guía.
+- Código de 6 dígitos en lugar del enlace que decía la guía §8 (decisión del usuario, 21 oct 2026). La guía ya está actualizada.

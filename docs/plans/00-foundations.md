@@ -56,7 +56,7 @@ internal/integrations/mail/
 db/
   migrations/    goose, SQL; embebidas con //go:embed
   sqlc.yaml      una entrada por módulo (se agregan con cada plan)
-docker-compose.dev.yml             Postgres 18 local (base orbita, rol orbita_app, esquema orbita, puerto 5432)
+docker-compose.dev.yml             Postgres 17 local, la versión de producción (base orbita, rol orbita_app, esquema orbita, puerto 5432)
 docs/openapi.yaml                  contrato; arranca con health
 ```
 
