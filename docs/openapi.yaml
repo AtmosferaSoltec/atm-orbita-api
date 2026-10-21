@@ -1,0 +1,125 @@
+openapi: 3.1.0
+info:
+  title: Orbita API
+  version: 0.1.0
+  description: |
+    Backend de la app Orbita (Android). Contrato según AGENT_GUIDE.md §4:
+    JSON en snake_case, éxito en `{ "data": ... }`, listas paginadas con
+    `meta`, errores en `{ "error": { "code", "message", "details" } }`.
+    El dinero viaja como texto ("1245.80"), nunca como número.
+    Se actualiza en el mismo cambio que cada plan de docs/plans/.
+servers:
+  - url: https://orbita-api.atmosferast.com/api/v1
+    description: Producción
+  - url: http://localhost:3001/api/v1
+    description: Desarrollo local
+
+paths:
+  /health:
+    get:
+      summary: El proceso responde (liveness)
+      description: La usa el healthcheck de Docker. No consulta la base.
+      operationId: getHealth
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      status: { type: string, example: ok }
+  /health/ready:
+    get:
+      summary: El API y su base responden (readiness)
+      operationId: getHealthReady
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      status: { type: string, example: ok }
+                      database: { type: string, example: ok }
+        "503":
+          description: La base no responde
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Money:
+      type: string
+      pattern: '^\d{1,12}(\.\d{1,2})?$'
+      description: Monto como texto, con punto decimal y hasta 2 decimales. Las respuestas siempre traen 2.
+      example: "1245.80"
+    Rate:
+      type: string
+      pattern: '^\d{1,12}(\.\d{1,6})?$'
+      description: Tipo de cambio como texto, hasta 6 decimales.
+      example: "3.200000"
+    LocalDate:
+      type: string
+      format: date
+      description: Día del calendario, sin hora ni zona.
+      example: "2026-10-02"
+    PageMeta:
+      type: object
+      required: [page, page_size, total]
+      properties:
+        page: { type: integer, minimum: 1 }
+        page_size: { type: integer, minimum: 1, maximum: 100 }
+        total: { type: integer, minimum: 0 }
+    FieldError:
+      type: object
+      required: [field, code]
+      properties:
+        field: { type: string, example: amount }
+        code:
+          type: string
+          description: Código del enum ValidationError de Android, en su orden de revisión.
+          example: AMOUNT_REQUIRED
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: |
+                Estable, en inglés. Comunes: VALIDATION_FAILED, UNAUTHORIZED, NOT_FOUND,
+                METHOD_NOT_ALLOWED, CONFLICT, ID_CONFLICT, PAYLOAD_TOO_LARGE,
+                TOO_MANY_REQUESTS, INTERNAL_ERROR, DATABASE_UNAVAILABLE.
+              example: VALIDATION_FAILED
+            message:
+              type: string
+              description: En español, solo como respaldo; la app elige su texto por el code.
+              example: Revisa los datos enviados.
+            details:
+              description: En VALIDATION_FAILED, la lista de campos con problema.
+              type: array
+              items: { $ref: "#/components/schemas/FieldError" }
+
+security:
+  - bearer: []

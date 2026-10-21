@@ -4,7 +4,7 @@ Planes para construir el backend real de la app Android `atm-orbita-android`, si
 
 - Escritos el 21 oct 2026, tras revisar completo el proyecto Android: sus documentos (`docs/01`…`06`, `ORBITA_SPEC.md`, `CLAUDE.md`), el dominio, `data/demo`, los ViewModels, las pantallas y sus pruebas.
 - **Fuente de verdad de las reglas:** el código de Android (`data/demo` y `domain`). Donde sus documentos dicen otra cosa, manda el código y la diferencia queda anotada en el plan.
-- Estado: **en revisión.** Decisiones del 21 oct 2026 incorporadas (abajo). No se implementa nada hasta que el usuario apruebe estos planes.
+- Estado: **aprobados el 21 oct 2026**, con las decisiones de abajo. Se implementan de a uno; el plan 00 está implementado y en revisión.
 - Rama: todo en `develop`. Flujo `develop` → `main` → `production`; promover lo decide el usuario.
 
 ## Orden y dependencias
@@ -13,20 +13,20 @@ Un plan = una funcionalidad que se entrega, se prueba y se revisa sola. Se ejecu
 
 | # | Plan | Módulo(s) | Pantallas de Android | Depende de | Estado |
 |---|---|---|---|---|---|
-| 00 | [Fundaciones](00-foundations.md) | `platform`, `integrations/mail` | — | — | Por aprobar |
-| 01 | [Registro, inicio y cierre de sesión](01-identity-sessions.md) | `identity` | Iniciar sesión, Registro, sesión persistente | 00 | Por aprobar |
-| 02 | [Perfil, monedas y tipo de cambio](02-profile-settings.md) | `profile` | Ajustes (monedas, tipo de cambio), Registro (moneda) | 01 | Por aprobar |
-| 03 | [Categorías](03-ledger-categories.md) | `ledger` | Categorías, Nueva/Editar categoría | 01, 02 | Por aprobar |
-| 04 | [Cuentas](04-ledger-accounts.md) | `ledger` | Cuentas, Nueva/Editar cuenta | 02, 03 | Por aprobar |
-| 05 | [Movimientos (ingresos y egresos)](05-ledger-transactions.md) | `ledger` | Nuevo/Editar movimiento, Lista de movimientos | 04 | Por aprobar |
-| 06 | [Transferencias](06-ledger-transfers.md) | `ledger` | Transferir / Editar transferencia | 05 | Por aprobar |
-| 07 | [Reportes](07-reports.md) | `reports` | Reportes (Mes, Año, Rango) | 05 | Por aprobar |
-| 08 | [Inicio](08-home.md) | `home` | Inicio | 04–07, 09 | Por aprobar |
-| 09 | [Tarjetas y compras pendientes](09-credit-cards-purchases.md) | `credit` | Tarjetas de Crédito, Nueva/Editar tarjeta, compra con tarjeta | 03, 04 | Por aprobar |
-| 10 | [Pagar una compra con tarjeta](10-credit-payments.md) | `credit`, `ledger` | Marcar como pagada; editar/eliminar el egreso de un pago | 05, 09 | Por aprobar |
-| 11 | [Recuperar contraseña](11-identity-password-recovery.md) | `identity`, `integrations/mail` | ¿Olvidaste tu contraseña? (3 pantallas) | 01 | Por aprobar |
-| 12 | [Eliminar cuenta](12-identity-delete-account.md) | `identity` + todos | Ajustes → Eliminar cuenta | 01–10 | Por aprobar |
-| 13 | [Integración con Android (transversal)](13-android-integration.md) | — | Todas | Se aplica en cada plan | Por aprobar |
+| 00 | [Fundaciones](00-foundations.md) | `platform`, `integrations/mail` | — | — | Implementado, en revisión |
+| 01 | [Registro, inicio y cierre de sesión](01-identity-sessions.md) | `identity` | Iniciar sesión, Registro, sesión persistente | 00 | Aprobado |
+| 02 | [Perfil, monedas y tipo de cambio](02-profile-settings.md) | `profile` | Ajustes (monedas, tipo de cambio), Registro (moneda) | 01 | Aprobado |
+| 03 | [Categorías](03-ledger-categories.md) | `ledger` | Categorías, Nueva/Editar categoría | 01, 02 | Aprobado |
+| 04 | [Cuentas](04-ledger-accounts.md) | `ledger` | Cuentas, Nueva/Editar cuenta | 02, 03 | Aprobado |
+| 05 | [Movimientos (ingresos y egresos)](05-ledger-transactions.md) | `ledger` | Nuevo/Editar movimiento, Lista de movimientos | 04 | Aprobado |
+| 06 | [Transferencias](06-ledger-transfers.md) | `ledger` | Transferir / Editar transferencia | 05 | Aprobado |
+| 07 | [Reportes](07-reports.md) | `reports` | Reportes (Mes, Año, Rango) | 05 | Aprobado |
+| 08 | [Inicio](08-home.md) | `home` | Inicio | 04–07, 09 | Aprobado |
+| 09 | [Tarjetas y compras pendientes](09-credit-cards-purchases.md) | `credit` | Tarjetas de Crédito, Nueva/Editar tarjeta, compra con tarjeta | 03, 04 | Aprobado |
+| 10 | [Pagar una compra con tarjeta](10-credit-payments.md) | `credit`, `ledger` | Marcar como pagada; editar/eliminar el egreso de un pago | 05, 09 | Aprobado |
+| 11 | [Recuperar contraseña](11-identity-password-recovery.md) | `identity`, `integrations/mail` | ¿Olvidaste tu contraseña? (3 pantallas) | 01 | Aprobado |
+| 12 | [Eliminar cuenta](12-identity-delete-account.md) | `identity` + todos | Ajustes → Eliminar cuenta | 01–10 | Aprobado |
+| 13 | [Integración con Android (transversal)](13-android-integration.md) | — | Todas | Se aplica en cada plan | Aprobado |
 | 14 | [Tipo de cambio automático](14-fx-automatic.md) | `profile` | Ajustes → Automático | 02 | Fase tardía, sin proveedor |
 | 15 | [Exportar reporte a PDF](15-reports-pdf.md) | `reports` | Reportes → PDF | 07 | Fase tardía |
 

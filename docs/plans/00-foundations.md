@@ -125,6 +125,43 @@ Integración:
 
 Ninguna.
 
+## Cómo correrlo en local
+
+```powershell
+docker compose -f docker-compose.dev.yml up -d          # Postgres 17 en 127.0.0.1:5432
+# solo la primera vez:
+Get-Content -Raw scripts\provision-db.sql | docker exec -i orbita-postgres-dev psql -v ON_ERROR_STOP=1 -U postgres -v "app_password='orbita_dev'" -d postgres
+
+go run ./cmd/api migrate                                 # aplica las migraciones (lee DATABASE_URL del entorno)
+go run ./cmd/api                                         # http://localhost:3001/api/v1/health/ready
+
+$env:TEST_DATABASE_URL="postgresql://orbita_app:orbita_dev@localhost:5432/orbita?search_path=orbita"
+go vet ./...; golangci-lint run; go test ./...; go build ./...
+```
+
+`go run` y `go test` leen las variables del entorno de la terminal, no del archivo `.env`.
+
+## Estado (21 oct 2026)
+
+Implementado y en revisión. Verificado en local:
+
+| Comprobación | Resultado |
+|---|---|
+| `go vet ./...` | Sin problemas |
+| `golangci-lint run` (v2.15.0, compilado con go1.27.3, con `.golangci.yml`) | `0 issues` |
+| `go test ./...` sin `TEST_DATABASE_URL` (como el check del despliegue) | Todo pasa; las pruebas de integración se saltan |
+| `go test ./...` contra el Postgres 17 local | Todo pasa: migraciones (tabla de control en `orbita`, up y down), transacciones (commit, rollback por error y por panic, anidadas) y el servidor con la base real |
+| `go build ./...` | Compila |
+| Binario: `api migrate`, `api`, `api healthcheck` | `no migrations to apply`; `/health` y `/health/ready` en 200 con `X-Request-Id`; ruta inexistente en 404; `healthcheck` sale con 0; sin `PORT` ni `DATABASE_URL` no arranca y nombra las dos |
+| `docker build .` (Dockerfile de producción sin cambios) | Imagen de 43 MB; su `migrate` corre contra la base local con logs JSON |
+
 ## Desviaciones
 
-(Se completan al implementar.)
+- **`db/sqlc.yaml` llega con el plan 01.** sqlc necesita al menos un paquete con consultas; en este plan no hay ninguna.
+- **`db/migrations/README.txt`.** `go:embed` falla con una carpeta vacía, y `.dockerignore` excluye `*.md`; un `.txt` mantiene la carpeta embebible hasta la primera migración (goose solo lee `.sql`).
+- **`migrate` asegura la tabla `goose_db_version` antes de aplicar**, aunque no haya migraciones: queda creada desde el primer despliegue.
+- **Dos códigos de error más** que los de la lista: `METHOD_NOT_ALLOWED` (405) y `PAYLOAD_TOO_LARGE` (413).
+- **El log de acceso tampoco registra `/health/ready`**, además de `/health`.
+- **`TEST_DATABASE_URL`** es una variable solo local (pruebas de integración); está en `.env.example` y nunca va al servidor.
+- **`go test -race` no corre en esta máquina**: necesita cgo y un compilador de C. El workflow tampoco lo usa.
+- **`time/tzdata` embebido en el binario**: "hoy" por zona horaria no depende de que el sistema tenga la base de zonas (la imagen la tiene igual).
