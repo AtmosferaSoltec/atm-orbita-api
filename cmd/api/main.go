@@ -21,11 +21,16 @@ import (
 	_ "time/tzdata"
 
 	"github.com/AtmosferaSoltec/atm-orbita-api/db"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/auth"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/clock"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/config"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/database"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/health"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/httpserver"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/logger"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/middleware"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/tx"
 )
 
 func main() {
@@ -78,6 +83,24 @@ func run() int {
 		return 1
 	}
 	health.Register(api, pool)
+
+	runner := tx.NewRunner(pool)
+	identityModule, err := identity.New(identity.Deps{
+		Tx:              runner,
+		Clock:           clock.System{},
+		JWTSecret:       cfg.JWTAccessSecret,
+		AccessTokenTTL:  cfg.AccessTokenTTL,
+		RefreshTokenTTL: cfg.RefreshTokenTTL,
+	})
+	if err != nil {
+		log.Error("modules", "error", err)
+		return 1
+	}
+
+	// Registro, inicio de sesión y renovación tienen un límite por IP más estrecho.
+	limited := api.Group("", middleware.NewRateLimiter(cfg.LoginRateLimitPerMinute).Middleware())
+	protected := api.Group("", auth.Require(identityModule.Authenticator()))
+	identityModule.Routes(api, limited, protected)
 
 	if err := httpserver.Serve(ctx, router, cfg.Port, log); err != nil {
 		log.Error("server", "error", err)
