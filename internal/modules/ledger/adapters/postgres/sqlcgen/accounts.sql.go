@@ -34,7 +34,12 @@ func (q *Queries) ArchiveAccount(ctx context.Context, arg ArchiveAccountParams) 
 
 const getAccount = `-- name: GetAccount :one
 SELECT a.id, a.user_id, a.name, a.type, a.currency, a.initial_balance, a.include_in_savings,
-       a.initial_balance::numeric AS balance, a.archived_at
+       (a.initial_balance + COALESCE((
+           SELECT SUM(CASE WHEN t.kind = 'income' THEN t.amount ELSE -t.amount END)
+           FROM transactions t
+           WHERE t.account_id = a.id AND t.deleted_at IS NULL
+       ), 0))::numeric AS balance,
+       a.archived_at
 FROM accounts a
 WHERE a.id = $1
 `
@@ -105,8 +110,14 @@ func (q *Queries) InsertAccount(ctx context.Context, arg InsertAccountParams) (i
 
 const listAccounts = `-- name: ListAccounts :many
 SELECT a.id, a.name, a.type, a.currency, a.include_in_savings,
-       a.initial_balance::numeric AS balance
+       (a.initial_balance + COALESCE(t.net, 0))::numeric AS balance
 FROM accounts a
+LEFT JOIN (
+    SELECT tx.account_id, SUM(CASE WHEN tx.kind = 'income' THEN tx.amount ELSE -tx.amount END) AS net
+    FROM transactions tx
+    WHERE tx.user_id = $1 AND tx.deleted_at IS NULL
+    GROUP BY tx.account_id
+) t ON t.account_id = a.id
 WHERE a.user_id = $1 AND a.archived_at IS NULL
 ORDER BY a.sort_order, a.created_at, a.id
 `
@@ -120,8 +131,8 @@ type ListAccountsRow struct {
 	Balance          decimal.Decimal
 }
 
-// Todas las cuentas activas con su saldo, en una sola consulta. Por ahora el
-// saldo es el inicial; los planes 05 y 06 suman aquí movimientos y transferencias.
+// Todas las cuentas activas con su saldo, en una sola consulta: saldo inicial +
+// ingresos − egresos (el plan 06 suma aquí las transferencias).
 func (q *Queries) ListAccounts(ctx context.Context, userID uuid.UUID) ([]ListAccountsRow, error) {
 	rows, err := q.db.Query(ctx, listAccounts, userID)
 	if err != nil {

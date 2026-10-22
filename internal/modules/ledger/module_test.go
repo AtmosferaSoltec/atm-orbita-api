@@ -38,6 +38,13 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
+	return newHarnessAt(t, clock.System{})
+}
+
+// newHarnessAt usa el reloj c para "hoy" y las fechas de alta; las sesiones,
+// el reloj real.
+func newHarnessAt(t *testing.T, c clock.Clock) *harness {
+	t.Helper()
 	pool := testsupport.MigratedPool(t)
 	gin.SetMode(gin.TestMode)
 	router, api, err := httpserver.NewRouter(httpserver.Options{
@@ -51,8 +58,8 @@ func newHarness(t *testing.T) *harness {
 		PasswordParams: &identity.FastPasswordParams,
 	})
 	require.NoError(t, err)
-	profileModule := profile.New(runner, clock.System{})
-	ledgerModule := ledger.New(runner, clock.System{}, profileModule.Reader())
+	profileModule := profile.New(runner, c)
+	ledgerModule := ledger.New(runner, c, profileModule.Reader())
 	identityModule.OnUserRegistered(func(ctx context.Context, u identity.NewUser) error {
 		if err := profileModule.OnUserRegistered(ctx, u.ID, u.MainCurrency, u.Timezone); err != nil {
 			return err

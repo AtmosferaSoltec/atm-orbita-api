@@ -16,26 +16,33 @@ import (
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/ledger/domain"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/profile"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/clock"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/dates"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/tx"
 )
 
 // Module arma el módulo con sus adaptadores.
 type Module struct {
-	categories        *app.CategoryService
-	accounts          *app.AccountService
-	categoriesHandler *ledgerhttp.Categories
-	accountsHandler   *ledgerhttp.Accounts
+	categories          *app.CategoryService
+	accounts            *app.AccountService
+	categoriesHandler   *ledgerhttp.Categories
+	accountsHandler     *ledgerhttp.Accounts
+	transactionsHandler *ledgerhttp.Transactions
 }
 
-// New crea el módulo. Del perfil solo lee las monedas y el tipo de cambio.
+// New crea el módulo. Del perfil lee las monedas, el tipo de cambio y "hoy".
 func New(runner tx.Runner, c clock.Clock, profiles profile.Reader) *Module {
-	categories := app.NewCategoryService(postgres.NewCategories(runner), c)
-	accounts := app.NewAccountService(postgres.NewAccounts(runner), fxSource{profiles}, c)
+	categoryRepo := postgres.NewCategories(runner)
+	accountRepo := postgres.NewAccounts(runner)
+	source := profileSource{profiles}
+	categories := app.NewCategoryService(categoryRepo, c)
+	accounts := app.NewAccountService(accountRepo, source, c)
+	transactions := app.NewTransactionService(postgres.NewTransactions(runner), accountRepo, categoryRepo, source, c)
 	return &Module{
-		categories:        categories,
-		accounts:          accounts,
-		categoriesHandler: ledgerhttp.NewCategories(categories),
-		accountsHandler:   ledgerhttp.NewAccounts(accounts),
+		categories:          categories,
+		accounts:            accounts,
+		categoriesHandler:   ledgerhttp.NewCategories(categories),
+		accountsHandler:     ledgerhttp.NewAccounts(accounts),
+		transactionsHandler: ledgerhttp.NewTransactions(transactions),
 	}
 }
 
@@ -43,6 +50,7 @@ func New(runner tx.Runner, c clock.Clock, profiles profile.Reader) *Module {
 func (m *Module) Routes(protected gin.IRoutes) {
 	m.categoriesHandler.Routes(protected)
 	m.accountsHandler.Routes(protected)
+	m.transactionsHandler.Routes(protected)
 }
 
 // OnUserRegistered crea las 9 categorías iniciales y la cuenta "Efectivo" en la
@@ -55,13 +63,17 @@ func (m *Module) OnUserRegistered(ctx context.Context, userID uuid.UUID, mainCur
 	return m.accounts.CreateInitial(ctx, userID, mainCurrency)
 }
 
-// fxSource adapta el perfil al puerto app.FxSource.
-type fxSource struct{ profiles profile.Reader }
+// profileSource adapta el perfil al puerto app.Profile.
+type profileSource struct{ profiles profile.Reader }
 
-func (s fxSource) Fx(ctx context.Context, userID uuid.UUID) (domain.Fx, error) {
+func (s profileSource) Fx(ctx context.Context, userID uuid.UUID) (domain.Fx, error) {
 	settings, err := s.profiles.Settings(ctx, userID)
 	if err != nil {
 		return domain.Fx{}, err
 	}
 	return domain.Fx{Main: settings.Main, Secondary: settings.Secondary, Rate: settings.Rate}, nil
+}
+
+func (s profileSource) Today(ctx context.Context, userID uuid.UUID) (dates.LocalDate, error) {
+	return s.profiles.Today(ctx, userID)
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/ledger/domain"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/clock"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/dates"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/ids"
 )
 
@@ -50,20 +51,23 @@ type Accounts interface {
 	Archive(ctx context.Context, userID, id uuid.UUID) error
 }
 
-// FxSource da las monedas y el tipo de cambio del usuario (módulo profile).
-type FxSource interface {
+// Profile es lo que el libro lee del perfil del usuario (módulo profile).
+type Profile interface {
+	// Fx son las monedas y el tipo de cambio.
 	Fx(ctx context.Context, userID uuid.UUID) (domain.Fx, error)
+	// Today es el día de hoy en la zona horaria del usuario.
+	Today(ctx context.Context, userID uuid.UUID) (dates.LocalDate, error)
 }
 
 // AccountService son los casos de uso de cuentas.
 type AccountService struct {
 	accounts Accounts
-	fx       FxSource
+	fx       Profile
 	clock    clock.Clock
 }
 
 // NewAccountService crea el servicio.
-func NewAccountService(accounts Accounts, fx FxSource, c clock.Clock) *AccountService {
+func NewAccountService(accounts Accounts, fx Profile, c clock.Clock) *AccountService {
 	return &AccountService{accounts: accounts, fx: fx, clock: c}
 }
 

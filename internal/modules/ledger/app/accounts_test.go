@@ -12,6 +12,7 @@ import (
 
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/ledger/domain"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/clock"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/dates"
 )
 
 type fakeAccounts struct {
@@ -75,9 +76,14 @@ func (f *fakeAccounts) Archive(_ context.Context, userID, id uuid.UUID) error {
 	return nil
 }
 
-type fakeFx struct{ fx domain.Fx }
+type fakeFx struct {
+	fx    domain.Fx
+	today dates.LocalDate
+}
 
 func (f *fakeFx) Fx(context.Context, uuid.UUID) (domain.Fx, error) { return f.fx, nil }
+
+func (f *fakeFx) Today(context.Context, uuid.UUID) (dates.LocalDate, error) { return f.today, nil }
 
 func newAccountService() (*AccountService, *fakeFx, uuid.UUID) {
 	fx := &fakeFx{fx: domain.Fx{Main: "PEN", Secondary: "USD"}}

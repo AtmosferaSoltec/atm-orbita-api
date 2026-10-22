@@ -192,6 +192,10 @@ func respondError(c *gin.Context, err error) {
 		apierror.Respond(c, apierror.ErrIDConflict)
 	case errors.Is(err, domain.ErrFxNotConfigured):
 		apierror.Respond(c, errFxNotConfigured)
+	case errors.Is(err, domain.ErrAccountArchived):
+		apierror.Respond(c, errAccountArchived)
+	case errors.Is(err, domain.ErrCategoryArchived):
+		apierror.Respond(c, errCategoryArchived)
 	default:
 		apierror.Respond(c, err)
 	}

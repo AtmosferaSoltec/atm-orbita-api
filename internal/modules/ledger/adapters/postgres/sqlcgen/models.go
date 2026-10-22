@@ -36,3 +36,17 @@ type Category struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
+
+type Transaction struct {
+	ID          uuid.UUID
+	UserID      uuid.UUID
+	AccountID   uuid.UUID
+	CategoryID  uuid.UUID
+	Kind        string
+	Amount      decimal.Decimal
+	OccurredOn  time.Time
+	Description string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	DeletedAt   *time.Time
+}

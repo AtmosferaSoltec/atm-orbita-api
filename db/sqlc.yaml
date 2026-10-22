@@ -25,6 +25,9 @@ overrides:
           import: time
           type: Time
           pointer: true
+      # DATE: medianoche UTC en un time.Time (dates.LocalDate.Time / dates.FromTime).
+      - db_type: date
+        go_type: time.Time
       # Dinero y tipos de cambio: decimal exacto (pgx-shopspring-decimal), nunca float.
       - db_type: pg_catalog.numeric
         go_type: github.com/shopspring/decimal.Decimal
@@ -57,9 +60,11 @@ sql:
     schema:
       - migrations/00003_ledger_create_categories.sql
       - migrations/00004_ledger_create_accounts.sql
+      - migrations/00005_ledger_create_transactions.sql
     queries:
       - ../internal/modules/ledger/adapters/postgres/categories.sql
       - ../internal/modules/ledger/adapters/postgres/accounts.sql
+      - ../internal/modules/ledger/adapters/postgres/transactions.sql
     gen:
       go:
         package: sqlcgen
