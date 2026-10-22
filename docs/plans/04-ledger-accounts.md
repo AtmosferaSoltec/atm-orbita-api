@@ -113,6 +113,38 @@ Integración:
 
 Ninguna.
 
+## Estado (22 oct 2026)
+
+Implementado en API y Android, en revisión.
+
+| Comprobación | Resultado |
+|---|---|
+| `gofmt`, `go vet`, `golangci-lint run`, `go build` | Sin problemas (`0 issues`) |
+| `go test ./...` sin base / contra el Postgres local | Pasa. Dominio: ahorro de los datos de ejemplo = S/ 7,166.30 y US$ 2,239.47; sin tipo de cambio, S/ 6,366.30; "Billetera digital" y una cuenta en EUR no suman; validaciones. Servicio: 6 pruebas. Integración por HTTP (6): "Efectivo" en MXN con 0.00 al registrarse; USD sin tipo de cambio → 422 y tras `PUT /settings/fx` → 201; total S/ 5,600.00 = US$ 1,750.00; validaciones en orden; `PATCH` con `currency` o `initial_balance` → 400; archivar la saca de la lista y del total; reintento con el mismo `id`; aislamiento entre usuarios → 404 |
+| Migración `00004`: `down` y `up` | Funciona; un usuario anterior recibe "Efectivo" en su moneda principal |
+| OpenAPI | Válido (Redocly) |
+| Android: pruebas, `lintDebug`, `installDebug` | 67 pruebas pasan (6 de `RemoteAccountsRepository`, 1 de `DemoAccountMirror`); ningún aviso de lint en los archivos nuevos |
+
+**En el teléfono** (API real + Postgres local, con una cuenta creada antes de esta migración):
+
+| Prueba | Resultado |
+|---|---|
+| Abrir Inicio y Cuentas | "Efectivo · soles, S/ 0.00", "1 de 1 cuentas" (la dio la migración) |
+| Nueva cuenta sin tipo de cambio | Solo deja soles ("Configura tu tipo de cambio en Ajustes para usar otras monedas.") |
+| Crear "Ahorros" con 4800 | S/ 4,800.00; total 2 de 2 |
+| Tipo de cambio 3.20 y crear "Cuenta Dolares" con US$ 250 | "≈ S/ 800.00"; total S/ 5,600.00 o US$ 1,750.00 |
+| Apagar "Contar en el total" en Ahorros | Total S/ 800.00, 2 de 3; queda guardado en la base |
+| Cerrar y abrir la app | Todo vuelve del API igual |
+| Gasto (demo) de S/ 20 desde "Efectivo" | Se guarda; Efectivo muestra S/ -20.00 y el total baja |
+| Archivar "Cuenta Dolares" | Sale de la lista y del total; en la base queda archivada |
+
 ## Desviaciones
 
-(Se completan al implementar.)
+- **La migración da "Efectivo" a los usuarios que ya existían**, en su moneda principal (la del perfil), como hizo la `00003` con las categorías.
+- **`FIELD_NOT_EDITABLE`** es el código para `currency` o `initial_balance` en un `PATCH` (el plan pedía un 400 sin nombrar el código).
+- **El ahorro total se calcula en Go, no en SQL**: SQL entrega el saldo de cada cuenta en una sola consulta y Go suma con la misma regla que `FxPair.savingsTotal` (convierte sin redondear y redondea una vez al final). `ledger` tiene su propia copia del par (`domain.Fx`) que llena desde `profile.Reader`, para que su dominio no dependa de otro módulo.
+- **`ledger.New` recibe `profile.Reader`** y `OnUserRegistered` recibe la moneda principal (crea las categorías y "Efectivo").
+- **`AccountReader` se deja para el plan 08 o 09** (Inicio y `credit` son quienes lo usan), como `CategoryReader`.
+- **Android no lee `savings`** de la respuesta: sigue calculando el total con `FxPair.savingsTotal` (da lo mismo; el plan lo permitía).
+- **Android: `DemoAccountMirror`** (temporal, hasta el plan 05), como el de categorías. Copia las cuentas del API al almacén demo con el saldo del API como inicial; los movimientos de ejemplo de la sesión mueven el saldo **en pantalla**, no en el API, y se pierden al cerrar la app.
+- **Observación de Android, sin cambiar**: al editar cualquier cuenta, la pantalla dice "La moneda no se puede cambiar porque la cuenta ya tiene movimientos.", aunque no tenga ninguno. La regla es que la moneda nunca cambia; el texto podría decir solo "La moneda no se puede cambiar.".
