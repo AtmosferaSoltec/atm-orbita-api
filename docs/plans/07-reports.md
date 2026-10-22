@@ -98,6 +98,34 @@ Integración (datos de ejemplo cargados):
 
 Ninguna.
 
+## Estado (22 oct 2026)
+
+Implementado en API y Android, en revisión.
+
+| Comprobación | Resultado |
+|---|---|
+| `gofmt`, `go vet`, `golangci-lint run`, `go build` | Sin problemas (`0 issues`) |
+| `go test ./...` sin base / contra el Postgres local | Pasa. Dominio (5): septiembre de los datos de ejemplo → gastos 37.2 / 28.5 / 10.0 / 8.8 / 8.5 / 6.9 y fuentes 83.3 / 14.3 / 2.4; total cero → 0; HALF_UP; monedas sin mezclar con la principal primero; empates por nombre; periodo recortado a hoy. Integración por HTTP (2), con los datos de ejemplo cargados y "hoy" = 2 oct en Lima: septiembre ingresos 4,200.00 (3,500.00 · 600.00 · 100.00), gastos 2,148.60, balance 2,051.40; octubre 3,500.00 / 30.50, sin la transferencia de US$ 20; año 2026 7,700.00 / 2,179.10; agosto y noviembre vacíos; un gasto en USD da un segundo bloque después de PEN; uno eliminado deja de sumar; otro usuario no ve nada |
+| OpenAPI | Válido (Redocly) |
+| Android: pruebas, `lintDebug`, `installDebug` | 76 pruebas pasan; ningún aviso de lint en los archivos nuevos |
+
+**En el teléfono** (API real + Postgres local):
+
+| Prueba | Resultado |
+|---|---|
+| Abrir Inicio | "Ingresos · Octubre" +S/ 0.00 y "Gastos · Octubre" −S/ 10.00: los reales (la transferencia de S/ 50 no cuenta) |
+| Registrar un ingreso de S/ 1,500 (Sueldo) | Inicio pasa a +S/ 1,500.00 al instante |
+| Reportes, Octubre 2026 | Ingresos S/ 1,500.00, gastos S/ 10.00, balance +S/ 1,490.00; "Alimentación S/ 10.00 · 100.0%" y "Sueldo S/ 1,500.00 · 100.0%" |
+| Septiembre | "No hay movimientos en este periodo" |
+| Año 2026 | Las mismas cifras que octubre |
+
 ## Desviaciones
 
-(Se completan al implementar.)
+- **`RANGE_INVALID` va en el campo `to`** y también cubre `from` o `to` ausentes.
+- **La categoría del reporte trae también `kind`** (además de `id`, `name` y `color`), para que la app arme su modelo sin consultar otra cosa. `percent` viaja como texto con 1 decimal ("37.2").
+- **Un periodo que empieza después de hoy** responde `200` con `currencies: []` (y `to` = hoy), no un error.
+- **Android sigue calculando los porcentajes** con `percentOf` y los totales sumando las filas: no lee `percent` ni los totales del API (dan lo mismo; el plan dejaba elegir). Así no se tocan las pantallas.
+- **Android vuelve a leer el reporte cuando cambia un movimiento o una transferencia** (`RemoteEntriesRepository.changes`).
+- **Las pruebas de integración de `reports` viven con las de `ledger`** (`internal/modules/ledger/reports_test.go`), que ya arman el sistema completo por HTTP y cargan los datos de ejemplo.
+- **"Inicio usa el mismo cálculo"**: hoy Inicio lo toma del mismo `ReportsRepository`; `GET /home` (plan 08) lo reunirá en una sola petición.
+- **Mezcla hasta el plan 10**: el gasto de un pago de tarjeta todavía se guarda en el modo demo, así que no aparece en los reportes hasta que los pagos pasen al API.
