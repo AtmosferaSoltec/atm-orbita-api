@@ -1,5 +1,6 @@
 # sqlc genera código Go tipado a partir de SQL real. Una entrada por módulo, que
-# genera dentro del propio módulo. El esquema son las migraciones de goose.
+# genera dentro del propio módulo. Cada entrada lee solo las migraciones de su
+# módulo: así cada uno genera los modelos de sus tablas y nada más.
 #
 # En Windows sqlc necesita cgo; se corre con su imagen de Docker:
 #   docker run --rm -v "${PWD}:/src" -w /src sqlc/sqlc generate -f db/sqlc.yaml
@@ -24,14 +25,31 @@ overrides:
           import: time
           type: Time
           pointer: true
+      # Dinero y tipos de cambio: decimal exacto (pgx-shopspring-decimal), nunca float.
+      - db_type: pg_catalog.numeric
+        go_type: github.com/shopspring/decimal.Decimal
+      - db_type: pg_catalog.numeric
+        nullable: true
+        go_type: github.com/shopspring/decimal.NullDecimal
 
 sql:
   - engine: postgresql
-    schema: migrations
+    schema:
+      - migrations/00001_identity_create_users_and_sessions.sql
     queries: ../internal/modules/identity/adapters/postgres/queries.sql
     gen:
       go:
         package: sqlcgen
         out: ../internal/modules/identity/adapters/postgres/sqlcgen
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
+  - engine: postgresql
+    schema:
+      - migrations/00002_profile_create_profiles_and_exchange_rates.sql
+    queries: ../internal/modules/profile/adapters/postgres/queries.sql
+    gen:
+      go:
+        package: sqlcgen
+        out: ../internal/modules/profile/adapters/postgres/sqlcgen
         sql_package: pgx/v5
         emit_pointers_for_null_types: true
