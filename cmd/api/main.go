@@ -24,6 +24,7 @@ import (
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/ledger"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/profile"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/reports"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/auth"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/clock"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/config"
@@ -101,6 +102,7 @@ func run() int {
 
 	profileModule := profile.New(runner, clock.System{})
 	ledgerModule := ledger.New(runner, clock.System{}, profileModule.Reader())
+	reportsModule := reports.New(ledgerModule.ReportQuery(), profileModule.Reader())
 
 	// El alta corre en una sola transacción: cuenta, sesión y, por cada módulo, lo
 	// que el usuario necesita desde el primer día.
@@ -117,6 +119,7 @@ func run() int {
 	identityModule.Routes(api, limited, protected)
 	profileModule.Routes(api, protected)
 	ledgerModule.Routes(protected)
+	reportsModule.Routes(protected)
 
 	if err := httpserver.Serve(ctx, router, cfg.Port, log); err != nil {
 		log.Error("server", "error", err)
