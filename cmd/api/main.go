@@ -100,7 +100,7 @@ func run() int {
 	}
 
 	profileModule := profile.New(runner, clock.System{})
-	ledgerModule := ledger.New(runner, clock.System{})
+	ledgerModule := ledger.New(runner, clock.System{}, profileModule.Reader())
 
 	// El alta corre en una sola transacción: cuenta, sesión y, por cada módulo, lo
 	// que el usuario necesita desde el primer día.
@@ -108,7 +108,7 @@ func run() int {
 		if err := profileModule.OnUserRegistered(ctx, user.ID, user.MainCurrency, user.Timezone); err != nil {
 			return err
 		}
-		return ledgerModule.OnUserRegistered(ctx, user.ID)
+		return ledgerModule.OnUserRegistered(ctx, user.ID, user.MainCurrency)
 	})
 
 	// Registro, inicio de sesión y renovación tienen un límite por IP más estrecho.
