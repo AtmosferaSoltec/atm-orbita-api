@@ -36,6 +36,10 @@ var errCategoryNameTaken = &apierror.Error{
 	Details: []apierror.FieldError{{Field: "name", Code: codeNameTaken}},
 }
 
+// El mismo code y mensaje que da el perfil.
+var errFxNotConfigured = apierror.New(http.StatusUnprocessableEntity, "FX_RATE_NOT_CONFIGURED",
+	"Configura tu tipo de cambio en Ajustes para usar otra moneda.")
+
 // Categories atiende la pantalla Categorías.
 type Categories struct {
 	service CategoryService
@@ -186,6 +190,8 @@ func respondError(c *gin.Context, err error) {
 		apierror.Respond(c, errCategoryNameTaken)
 	case errors.Is(err, domain.ErrIDTaken):
 		apierror.Respond(c, apierror.ErrIDConflict)
+	case errors.Is(err, domain.ErrFxNotConfigured):
+		apierror.Respond(c, errFxNotConfigured)
 	default:
 		apierror.Respond(c, err)
 	}

@@ -56,8 +56,10 @@ sql:
   - engine: postgresql
     schema:
       - migrations/00003_ledger_create_categories.sql
+      - migrations/00004_ledger_create_accounts.sql
     queries:
       - ../internal/modules/ledger/adapters/postgres/categories.sql
+      - ../internal/modules/ledger/adapters/postgres/accounts.sql
     gen:
       go:
         package: sqlcgen

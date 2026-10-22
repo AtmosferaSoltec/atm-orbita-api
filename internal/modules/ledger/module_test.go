@@ -52,12 +52,12 @@ func newHarness(t *testing.T) *harness {
 	})
 	require.NoError(t, err)
 	profileModule := profile.New(runner, clock.System{})
-	ledgerModule := ledger.New(runner, clock.System{})
+	ledgerModule := ledger.New(runner, clock.System{}, profileModule.Reader())
 	identityModule.OnUserRegistered(func(ctx context.Context, u identity.NewUser) error {
 		if err := profileModule.OnUserRegistered(ctx, u.ID, u.MainCurrency, u.Timezone); err != nil {
 			return err
 		}
-		return ledgerModule.OnUserRegistered(ctx, u.ID)
+		return ledgerModule.OnUserRegistered(ctx, u.ID, u.MainCurrency)
 	})
 	protected := api.Group("", auth.Require(identityModule.Authenticator()))
 	identityModule.Routes(api, api, protected)
@@ -115,9 +115,19 @@ func (r response) fieldCodes() []string {
 
 func (h *harness) signUp(t *testing.T, label string) string {
 	t.Helper()
+	return h.signUpWith(t, label, nil)
+}
+
+// signUpWith registra con campos extra (main_currency, timezone).
+func (h *harness) signUpWith(t *testing.T, label string, fields map[string]string) string {
+	t.Helper()
 	email := testsupport.UniqueEmail(label)
 	testsupport.DeleteUsersByEmail(t, h.pool, email)
-	res := h.call(t, http.MethodPost, "/auth/register", "", map[string]string{"email": email, "password": "vidanueva123"})
+	payload := map[string]string{"email": email, "password": "vidanueva123"}
+	for k, v := range fields {
+		payload[k] = v
+	}
+	res := h.call(t, http.MethodPost, "/auth/register", "", payload)
 	require.Equal(t, http.StatusCreated, res.status, res.body)
 	return res.data()["tokens"].(map[string]any)["access_token"].(string)
 }
