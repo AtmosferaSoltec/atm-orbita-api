@@ -99,6 +99,37 @@ Integración:
 
 Ninguna.
 
+## Estado (22 oct 2026)
+
+Implementado en API y Android, en revisión.
+
+| Comprobación | Resultado |
+|---|---|
+| `gofmt`, `go vet`, `golangci-lint run`, `go build` | Sin problemas (`0 issues`) |
+| `go test ./...` sin base / contra el Postgres local | Pasa: 4 del dominio (nombre limpio y largo en caracteres, color, tipo, clave sin tildes que conserva la ñ, las 9 iniciales válidas y sin repetir), 5 del servicio y 6 de integración por HTTP (las 9 al registrarse y en orden; "alimentacion" y "ALIMENTACIÓN" de egreso → 409, de ingreso → 201; archivar "Ocio" y crear "ocio" → 201; "OCIO" → 200; errores en el orden de la app; reintento con el mismo `id` → 200, con otro contenido → `ID_CONFLICT`; dos altas simultáneas → una 201 y otra 409; aislamiento entre usuarios → 404) |
+| Migración `00003`: `down` y `up` | Funciona; un usuario anterior a la migración recibe las 9 en orden |
+| OpenAPI | Válido (Redocly) |
+| Android: pruebas, `lintDebug`, `installDebug` | 60 pruebas pasan (6 de `RemoteCategoriesRepository`, 1 de `DemoCategoryMirror`); ningún aviso de lint en los archivos nuevos |
+
+**En el teléfono** (API real + Postgres local):
+
+| Prueba | Resultado |
+|---|---|
+| Registro | La base tiene las 9; Categorías muestra las 6 de egreso y las 3 de ingreso, en el orden de la app |
+| Crear "alimentacion" de egreso | "Ya tienes una categoría de este tipo con ese nombre." bajo el campo |
+| Crear "Mascotas" | 201; aparece al final de Egresos |
+| Renombrar "Ocio" a "OCIO" | Se guarda |
+| Movimiento (demo) con "Mascotas" | Se guarda y se ve en Inicio |
+| Archivar "Mascotas" | Deja de listarse; el movimiento la conserva; en la base queda archivada y sin `name_normalized` |
+| Cerrar y abrir la app | Las categorías vuelven del API |
+
 ## Desviaciones
 
-(Se completan al implementar.)
+- **Orden de la lista**: en el orden en que se crearon (`created_at`, `id`), no "por tipo y nombre". Así las 9 iniciales salen como en la app (Alimentación primero) y las nuevas, al final, como en el modo demo.
+- **La migración da las 9 iniciales a los usuarios que ya existían** (con un microsegundo entre una y otra para conservar el orden). Sin esto, una cuenta creada antes del plan 03 quedaría sin categorías.
+- **`CATEGORY_NAME_TAKEN` trae `details`** con `name` / `NAME_TAKEN`, para que cualquier cliente sepa bajo qué campo mostrarlo.
+- **`KIND_INVALID`** es un código nuevo (Android no lo necesita: el tipo se elige con dos botones). Un `id` que no es UUID en el cuerpo responde `INVALID_FORMAT`; en la ruta, `404`.
+- **Archivar dos veces** responde 204 (idempotente); editar una archivada, 404.
+- **`CategoryReader` se deja para el plan 09** (`credit`), que es quien lo usa; el plan 05 lo necesitará también para los movimientos y lo agregará si llega antes.
+- **Android: `DemoCategoryMirror`** (temporal, hasta el plan 05). Los movimientos y compras siguen en datos de ejemplo y el modo demo falla si un movimiento apunta a una categoría que no conoce. El puente copia cada lista leída del API al almacén demo; las categorías de ejemplo quedan ahí archivadas para que los movimientos de ejemplo conserven las suyas.
+- **Android valida el nombre repetido antes de enviar** con la lista que ya tiene (como en el modo demo); el 409 del API es el respaldo (otro dispositivo, carreras) y se muestra con el mismo texto.

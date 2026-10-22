@@ -124,7 +124,7 @@ Ninguna.
 
 ## Estado (21 oct 2026)
 
-Implementado en API y Android, en revisión.
+Hecho: implementado en API y Android, revisado.
 
 | Comprobación | Resultado |
 |---|---|
