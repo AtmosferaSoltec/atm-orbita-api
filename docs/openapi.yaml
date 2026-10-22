@@ -521,10 +521,93 @@ paths:
         "204": { description: Eliminado }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /transfers:
+    post:
+      summary: Transferir entre dos cuentas propias
+      description: |
+        No es ingreso ni gasto. En la misma moneda, sin tipo de cambio y con montos iguales;
+        entre monedas, tipo de cambio obligatorio (el API guarda el que manda la app).
+      operationId: createTransfer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from_account_id, to_account_id, from_amount, to_amount]
+              properties:
+                id: { type: string, format: uuid }
+                from_account_id: { type: string, format: uuid }
+                to_account_id: { type: string, format: uuid }
+                from_amount: { $ref: "#/components/schemas/Money" }
+                to_amount: { $ref: "#/components/schemas/Money" }
+                exchange_rate:
+                  oneOf:
+                    - { $ref: "#/components/schemas/Rate" }
+                    - { type: "null" }
+                occurred_on: { $ref: "#/components/schemas/LocalDate" }
+                note: { type: string, maxLength: 500 }
+      responses:
+        "201":
+          description: Creada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TransferResponse" }
+        "200":
+          description: Reintento idéntico; ya existía
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TransferResponse" }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/IdConflict" }
+        "422": { $ref: "#/components/responses/Archived" }
+
+  /transfers/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      summary: Editar una transferencia (solo cambia lo que viene)
+      description: "`exchange_rate: null` lo borra (misma moneda); si no viene, se queda como estaba."
+      operationId: updateTransfer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from_account_id: { type: string, format: uuid }
+                to_account_id: { type: string, format: uuid }
+                from_amount: { $ref: "#/components/schemas/Money" }
+                to_amount: { $ref: "#/components/schemas/Money" }
+                exchange_rate:
+                  oneOf:
+                    - { $ref: "#/components/schemas/Rate" }
+                    - { type: "null" }
+                occurred_on: { $ref: "#/components/schemas/LocalDate" }
+                note: { type: string, maxLength: 500 }
+      responses:
+        "200":
+          description: Transferencia actualizada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TransferResponse" }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Archived" }
+    delete:
+      summary: Eliminar una transferencia
+      description: Los dos saldos vuelven a como estaban. Eliminar una ya eliminada responde 204.
+      operationId: deleteTransfer
+      responses:
+        "204": { description: Eliminada }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /entries:
     get:
-      summary: Movimientos de un periodo, del más reciente al más antiguo
-      description: Las transferencias se mezclan aquí desde el plan 06.
+      summary: Movimientos y transferencias de un periodo, del más reciente al más antiguo
+      description: "`q` busca en la descripción o en la nota; `account_id` coincide con la cuenta del movimiento o con cualquiera de las dos de la transferencia."
       operationId: listEntries
       parameters:
         - { name: from, in: query, required: true, schema: { $ref: "#/components/schemas/LocalDate" } }
@@ -544,7 +627,11 @@ paths:
                 properties:
                   data:
                     type: array
-                    items: { $ref: "#/components/schemas/Entry" }
+                    items:
+                      oneOf:
+                        - { $ref: "#/components/schemas/Entry" }
+                        - { $ref: "#/components/schemas/TransferEntry" }
+                      discriminator: { propertyName: entry_type }
                   meta: { $ref: "#/components/schemas/PageMeta" }
         "400": { $ref: "#/components/responses/ValidationFailed" }
 
@@ -694,7 +781,7 @@ components:
       type: object
       required: [entry_type, id, kind, occurred_on, amount, currency, description, account, category, credit_purchase_id]
       properties:
-        entry_type: { type: string, enum: [transaction], description: "transfer llega con el plan 06" }
+        entry_type: { type: string, enum: [transaction] }
         id: { type: string, format: uuid }
         kind: { type: string, enum: [income, expense] }
         occurred_on: { $ref: "#/components/schemas/LocalDate" }
@@ -711,6 +798,36 @@ components:
             currency: { type: string }
         category: { $ref: "#/components/schemas/Category" }
         credit_purchase_id: { type: [string, "null"], format: uuid, description: "Desde el plan 10; hoy siempre null" }
+    TransferEntry:
+      type: object
+      required: [entry_type, id, occurred_on, note, from_account, to_account, from_amount, to_amount, exchange_rate]
+      properties:
+        entry_type: { type: string, enum: [transfer] }
+        id: { type: string, format: uuid }
+        occurred_on: { $ref: "#/components/schemas/LocalDate" }
+        note: { type: string }
+        from_account: { $ref: "#/components/schemas/EntryAccount" }
+        to_account: { $ref: "#/components/schemas/EntryAccount" }
+        from_amount: { $ref: "#/components/schemas/Money" }
+        to_amount: { $ref: "#/components/schemas/Money" }
+        exchange_rate:
+          description: Unidades de la moneda de destino por 1 de la de origen; null en la misma moneda
+          oneOf:
+            - { $ref: "#/components/schemas/Rate" }
+            - { type: "null" }
+    TransferResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/TransferEntry" }
+    EntryAccount:
+      type: object
+      required: [id, name, type, currency]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        type: { type: string, enum: [cash, debit, savings, other] }
+        currency: { type: string }
     EntryResponse:
       type: object
       required: [data]
