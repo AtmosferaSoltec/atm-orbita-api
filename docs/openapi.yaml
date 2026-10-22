@@ -827,6 +827,70 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/CreditConflict" }
 
+  /home:
+    get:
+      summary: Todo Inicio en una petición
+      description: |
+        Compone lo que dan los demás endpoints en el mismo instante: `savings` es el de
+        `GET /accounts`, `recent_entries` son las 4 filas más recientes de `GET /entries` y `month`
+        son los totales de `GET /reports/summary` del mes en curso en la moneda principal.
+        `credit` es null sin compras pendientes.
+      operationId: getHome
+      responses:
+        "200":
+          description: Inicio
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [today, settings, savings, month, recent_entries, credit]
+                    properties:
+                      today: { $ref: "#/components/schemas/LocalDate" }
+                      settings:
+                        type: object
+                        required: [main_currency, secondary_currency, display_currency, fx_configured, rate, fx_mode]
+                        properties:
+                          main_currency: { type: string }
+                          secondary_currency: { type: string }
+                          display_currency: { type: string }
+                          fx_configured: { type: boolean }
+                          rate:
+                            oneOf:
+                              - { $ref: "#/components/schemas/Rate" }
+                              - { type: "null" }
+                          fx_mode: { type: string, enum: [manual, auto] }
+                      savings: { $ref: "#/components/schemas/Savings" }
+                      month:
+                        type: object
+                        required: [from, to, currency, income_total, expense_total]
+                        properties:
+                          from: { $ref: "#/components/schemas/LocalDate" }
+                          to: { $ref: "#/components/schemas/LocalDate" }
+                          currency: { type: string }
+                          income_total: { $ref: "#/components/schemas/Money" }
+                          expense_total: { $ref: "#/components/schemas/Money" }
+                      recent_entries:
+                        type: array
+                        items:
+                          oneOf:
+                            - { $ref: "#/components/schemas/Entry" }
+                            - { $ref: "#/components/schemas/TransferEntry" }
+                          discriminator: { propertyName: entry_type }
+                      credit:
+                        oneOf:
+                          - type: object
+                            required: [pending_count, next_due_date, has_urgent]
+                            properties:
+                              pending_count: { type: integer }
+                              next_due_date: { $ref: "#/components/schemas/LocalDate" }
+                              has_urgent: { type: boolean, description: "Alguna vence en 3 días o menos, o ya venció" }
+                          - { type: "null" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
 components:
   responses:
     CreditConflict:
