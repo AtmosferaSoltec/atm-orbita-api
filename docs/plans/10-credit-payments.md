@@ -104,6 +104,33 @@ Integración (datos de ejemplo):
 
 Ninguna.
 
+## Estado (22 oct 2026)
+
+Implementado en API y Android, en revisión.
+
+| Comprobación | Resultado |
+|---|---|
+| `gofmt`, `go vet`, `golangci-lint run`, `go build` | Sin problemas (`0 issues`) |
+| `go test ./...` sin base / contra el Postgres local | Pasa. Servicio de `ledger` (2): el egreso de un pago solo cambia cuenta, monto y fecha (categoría o descripción → bloqueado); eliminarlo llama a `RevertPayment`, un movimiento común no; cuenta archivada → rechazado. Integración por HTTP (4), con "hoy" = 2 oct en Lima: pagar Pasajes desde Débito por 240.00 → 1,245.80 a 1,005.80, sale de pendientes, el egreso está en `/entries` con Transporte, "Pasajes" y `credit_purchase_id`, y en el reporte del mes; pagar, editar o eliminar una pagada → 409; editar cuenta, monto y fecha del egreso → 200, categoría o descripción → `422 PAYMENT_EXPENSE_LOCKED`; eliminarlo → la compra vuelve a pendiente y a la deuda de Visa, y se puede pagar otra vez; **dos pagos simultáneos → un 200 y un 409, un solo egreso**; pagar desde una cuenta archivada (falla después de bloquear la compra) → 422 y la compra sigue pendiente, sin egreso; validación en orden; la compra de otro usuario → 404; eliminar el pago de una tarjeta ya archivada → la tarjeta vuelve a aparecer |
+| Migraciones `00008` y `00009`: `down` y `up` | Funcionan |
+| OpenAPI | Válido (Redocly) |
+| Android: pruebas, `lintDebug`, `installDebug` | 83 pruebas pasan (2 nuevas de pago en `RemoteCreditRepository`); ningún aviso nuevo de lint |
+
+**En el teléfono** (API real + Postgres local):
+
+| Prueba | Resultado |
+|---|---|
+| Marcar como pagada "Audifonos" (S/ 120) desde Efectivo | La deuda baja a S/ 10.00; Inicio: ahorro de S/ 1,517.60 a S/ 1,397.60, gastos del mes S/ 155.00, "Audifonos · Ocio · Efectivo" en recientes, "1 pago pendiente"; en la base, egreso `credit_payment` y compra `paid` |
+| Abrir ese egreso | Muestra la nota "Este egreso es el pago de una compra con tarjeta…" con categoría y descripción fijas |
+| Cambiar el monto a S/ 118.50 | Se guarda; ahorro S/ 1,399.10 |
+| Eliminarlo | Pide confirmación con el aviso de que la compra vuelve a pendiente; todo vuelve a S/ 1,517.60, gastos S/ 35.00, "2 pagos pendientes"; en la base la compra está `pending` y sin egreso |
+
 ## Desviaciones
 
-(Se completan al implementar.)
+- **`paid_on` es opcional**: sin él, el pago es de hoy en la zona del perfil (Android lo manda siempre).
+- **`PaymentLedger.CreatePaymentExpense` devuelve también el egreso con la forma de `GET /entries`**, para la respuesta `{ purchase, transaction }`, sin que `credit` conozca ese formato.
+- **El cableado de `PaymentReverter` es un gancho**: `ledger.OnPaymentDeleted(credit)` en `main.go`, porque `credit` se crea después que `ledger`.
+- **El egreso del pago usa la categoría de la compra aunque se haya archivado después**: el pago es de esa compra. La cuenta sí tiene que estar activa (`422 ACCOUNT_ARCHIVED`).
+- **La migración `00008` agrega dos `CHECK`**: `source` solo `manual` o `credit_payment`, y `source_id` presente si y solo si es un pago.
+- **La prueba de atomicidad** fuerza el fallo pagando desde una cuenta archivada: la compra ya está bloqueada cuando falla la creación del egreso, y queda pendiente sin ningún egreso.
+- **Android**: tras un pago se vuelven a leer los saldos; y las listas de movimientos y de crédito ahora se vuelven a leer con cualquier escritura remota (`RemoteChanges`), porque un pago crea un movimiento y eliminar ese movimiento devuelve una compra.
