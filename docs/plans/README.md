@@ -4,7 +4,7 @@ Planes para construir el backend real de la app Android `atm-orbita-android`, si
 
 - Escritos el 21 oct 2026, tras revisar completo el proyecto Android: sus documentos (`docs/01`…`06`, `ORBITA_SPEC.md`, `CLAUDE.md`), el dominio, `data/demo`, los ViewModels, las pantallas y sus pruebas.
 - **Fuente de verdad de las reglas:** el código de Android (`data/demo` y `domain`). Donde sus documentos dicen otra cosa, manda el código y la diferencia queda anotada en el plan.
-- Estado: **aprobados el 21 oct 2026**, con las decisiones de abajo. Se implementan de a uno; el 00, el 01 y el 02 están hechos, y el 03 implementado y en revisión.
+- Estado: **aprobados el 21 oct 2026**, con las decisiones de abajo. Se implementan de a uno; del 00 al 03 están hechos.
 - Rama: todo en `develop`. Flujo `develop` → `main` → `production`; promover lo decide el usuario.
 
 ## Orden y dependencias
@@ -16,7 +16,7 @@ Un plan = una funcionalidad que se entrega, se prueba y se revisa sola. Se ejecu
 | 00 | [Fundaciones](00-foundations.md) | `platform`, `integrations/mail` | — | — | Hecho |
 | 01 | [Registro, inicio y cierre de sesión](01-identity-sessions.md) | `identity` | Iniciar sesión, Registro, sesión persistente | 00 | Hecho |
 | 02 | [Perfil, monedas y tipo de cambio](02-profile-settings.md) | `profile` | Ajustes (monedas, tipo de cambio), Registro (moneda) | 01 | Hecho |
-| 03 | [Categorías](03-ledger-categories.md) | `ledger` | Categorías, Nueva/Editar categoría | 01, 02 | Implementado, en revisión |
+| 03 | [Categorías](03-ledger-categories.md) | `ledger` | Categorías, Nueva/Editar categoría | 01, 02 | Hecho |
 | 04 | [Cuentas](04-ledger-accounts.md) | `ledger` | Cuentas, Nueva/Editar cuenta | 02, 03 | Aprobado |
 | 05 | [Movimientos (ingresos y egresos)](05-ledger-transactions.md) | `ledger` | Nuevo/Editar movimiento, Lista de movimientos | 04 | Aprobado |
 | 06 | [Transferencias](06-ledger-transfers.md) | `ledger` | Transferir / Editar transferencia | 05 | Aprobado |
@@ -70,6 +70,7 @@ Reglas de dependencia: las de `AGENT_GUIDE.md` §3. Un módulo nunca importa paq
 | P7 | Rama de Android | **`develop`** también en `atm-orbita-android` | 13 |
 | P8 | Documentos de Android | Se borraron **a propósito**, para **generarlos de nuevo** con esta forma de trabajo (backend Go) | 13 |
 | P9 | Herramientas locales | Go instalado (`go1.27.3`). **Las pruebas apuntan al Postgres local** del usuario, en su contenedor de Docker | 00 |
+| P10 | Ver y recuperar categorías archivadas | **Después** (22 oct 2026): hoy archivar las oculta para siempre (siguen en la base). Pedirá una ruta nueva y una sección "Archivadas" en Categorías | 03 |
 ## Diferencias entre los documentos de Android y su código (manda el código)
 
 | Tema | Documentos | Código (`data/demo`, `domain`) | Qué hace el API |
