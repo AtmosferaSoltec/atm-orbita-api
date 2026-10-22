@@ -112,6 +112,43 @@ Integración (datos de ejemplo):
 
 Ninguna.
 
+## Estado (22 oct 2026)
+
+Implementado en API y Android, en revisión.
+
+| Comprobación | Resultado |
+|---|---|
+| `gofmt`, `go vet`, `golangci-lint run`, `go build` | Sin problemas (`0 issues`) |
+| `go test ./...` sin base / contra el Postgres local | Pasa. Dominio (3): deuda de los datos de ejemplo S/ 525.90 + US$ 12.00 (Visa S/ 336.00, Mastercard S/ 189.90 + US$ 12.00), orden de tarjetas, resumen y urgencia (3 días, vencida), validaciones. Integración por HTTP (4), con "hoy" = 2 oct en Lima: deuda y orden de la lista; una compra no cambia saldos, reportes ni la lista de movimientos; Pasajes a 250.00 → Visa S/ 346.00 y nada más; la Suscripción conserva USD en su tarjeta (ya en soles) y pasa a PEN al moverla; fecha límite vencida al editar sí, antes de la compra no; archivar Visa con pendientes → 409 y tras eliminarlas → 204; tarjeta archivada → `CARD_ARCHIVED`; orden de validación; categoría de ingreso → `CATEGORY_KIND_MISMATCH`; tarjeta en USD sin tipo de cambio → 422; aislamiento entre usuarios |
+| Migración `00007`: `down` y `up` | Funciona |
+| OpenAPI | Válido (Redocly) |
+| Android: pruebas, `lintDebug`, `installDebug` | 78 pruebas pasan (5 de `RemoteCreditRepository`); ningún aviso nuevo de lint |
+
+**En el teléfono** (API real + Postgres local):
+
+| Prueba | Resultado |
+|---|---|
+| Abrir Crédito | "Aún no tienes tarjetas de crédito" (ya no salen las de ejemplo) |
+| Nueva tarjeta "Visa" y compra "Zapatillas" de S/ 200 | Deuda S/ 200.00, vence 4 nov; en la base, pendiente con fecha de compra de hoy |
+| Ahorro y Reportes tras la compra | No cambian (S/ 1,533.60; gastos del mes S/ 35.00) |
+| Editar la compra a S/ 250 | Deuda S/ 250.00 |
+| Archivar Visa con la compra pendiente | La app lo impide con su aviso |
+| Eliminar la compra y archivar | Deuda S/ 0.00; Visa deja de listarse y queda archivada en la base |
+| Tarjeta "Mastercard" y compra "Audifonos" de S/ 120 | Se guarda; Inicio muestra "1 pago pendiente · vence 4 nov" |
+| Marcar como pagada | "Algo salió mal. Inténtalo de nuevo.": pagar es el plan 10 |
+
 ## Desviaciones
 
-(Se completan al implementar.)
+- **La compra trae también su `card`** (`id`, `name`, `currency`) además de `card_id`, para que la app la muestre sin pedir las tarjetas aparte.
+- **`POST` y `PATCH /credit-cards` responden la tarjeta con su deuda**, igual que la lista.
+- **`ledger` expone `CategoryReader.Categories(ids)`, que devuelve también las archivadas**, y `credit` decide: una compra nueva (o movida a otra categoría) no usa una archivada (`422 CATEGORY_ARCHIVED`, código nuevo), pero una que ya la tenía la conserva y la lista la muestra.
+- **`CATEGORY_KIND_MISMATCH` se informa solo**, después de que el resto del formulario es válido (hay que leer la categoría para saber su tipo).
+- **`due_date` ausente o mal escrita** → `INVALID_FORMAT`.
+- **`DELETE /credit-purchases/{id}`**: `204` si ya estaba eliminada; si nunca existió o es de otro usuario, `404` (como el resto del API).
+- **`GET /credit-purchases` solo admite `status=pending`** (es el valor por defecto); otro valor → `400`.
+- **`CreditSummary` queda listo** (pendientes, próxima fecha límite y urgencia) para Inicio, plan 08.
+- **Las pruebas de integración de `credit` viven con las de `ledger`**, que ya arman el sistema completo.
+- **Android quita los tres puentes temporales** (`DemoCategoryMirror`, `DemoAccountMirror`, `DemoEntriesMix`): con las compras en el API ya nada del modo demo escribe sobre cuentas o categorías reales.
+- **Android: "Marcar como pagada" da un error genérico hasta el plan 10.** Antes funcionaba solo en el modo demo; ya no puede, porque las compras están en el API.
+- **Android, corrección en Nuevo movimiento**: la tarjeta por defecto se elegía una sola vez al abrir el formulario, y con el API la lista llega un instante después; en el teléfono quedó elegida una tarjeta recién archivada y el API la rechazó (`CARD_ARCHIVED`). Ahora, si la elegida ya no está en la lista, se usa la primera.
+- **Android sigue sumando la deuda** a partir de las compras pendientes (`debtIn`); no lee `debt` de las tarjetas (da lo mismo).
