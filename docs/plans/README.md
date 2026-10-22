@@ -4,7 +4,7 @@ Planes para construir el backend real de la app Android `atm-orbita-android`, si
 
 - Escritos el 21 oct 2026, tras revisar completo el proyecto Android: sus documentos (`docs/01`…`06`, `ORBITA_SPEC.md`, `CLAUDE.md`), el dominio, `data/demo`, los ViewModels, las pantallas y sus pruebas.
 - **Fuente de verdad de las reglas:** el código de Android (`data/demo` y `domain`). Donde sus documentos dicen otra cosa, manda el código y la diferencia queda anotada en el plan.
-- Estado: **aprobados el 21 oct 2026**, con las decisiones de abajo. Se implementan de a uno; del 00 al 04 están hechos, y el 05 implementado y en revisión.
+- Estado: **aprobados el 21 oct 2026**, con las decisiones de abajo. Se implementan de a uno; del 00 al 05 están hechos.
 - Rama: todo en `develop`. Flujo `develop` → `main` → `production`; promover lo decide el usuario.
 
 ## Orden y dependencias
@@ -18,7 +18,7 @@ Un plan = una funcionalidad que se entrega, se prueba y se revisa sola. Se ejecu
 | 02 | [Perfil, monedas y tipo de cambio](02-profile-settings.md) | `profile` | Ajustes (monedas, tipo de cambio), Registro (moneda) | 01 | Hecho |
 | 03 | [Categorías](03-ledger-categories.md) | `ledger` | Categorías, Nueva/Editar categoría | 01, 02 | Hecho |
 | 04 | [Cuentas](04-ledger-accounts.md) | `ledger` | Cuentas, Nueva/Editar cuenta | 02, 03 | Hecho |
-| 05 | [Movimientos (ingresos y egresos)](05-ledger-transactions.md) | `ledger` | Nuevo/Editar movimiento, Lista de movimientos | 04 | Implementado, en revisión |
+| 05 | [Movimientos (ingresos y egresos)](05-ledger-transactions.md) | `ledger` | Nuevo/Editar movimiento, Lista de movimientos | 04 | Hecho |
 | 06 | [Transferencias](06-ledger-transfers.md) | `ledger` | Transferir / Editar transferencia | 05 | Aprobado |
 | 07 | [Reportes](07-reports.md) | `reports` | Reportes (Mes, Año, Rango) | 05 | Aprobado |
 | 08 | [Inicio](08-home.md) | `home` | Inicio | 04–07, 09 | Aprobado |
