@@ -635,6 +635,36 @@ paths:
                   meta: { $ref: "#/components/schemas/PageMeta" }
         "400": { $ref: "#/components/responses/ValidationFailed" }
 
+  /reports/summary:
+    get:
+      summary: Reporte de un periodo, por moneda y sin mezclar
+      description: |
+        Solo movimientos (no transferencias), sin los eliminados. La moneda principal primero.
+        `to` se recorta a hoy en la zona del perfil. Un periodo sin movimientos da `currencies: []`.
+      operationId: reportSummary
+      parameters:
+        - { name: from, in: query, required: true, schema: { $ref: "#/components/schemas/LocalDate" } }
+        - { name: to, in: query, required: true, schema: { $ref: "#/components/schemas/LocalDate" } }
+      responses:
+        "200":
+          description: El reporte
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [from, to, currencies]
+                    properties:
+                      from: { $ref: "#/components/schemas/LocalDate" }
+                      to: { $ref: "#/components/schemas/LocalDate" }
+                      currencies:
+                        type: array
+                        items: { $ref: "#/components/schemas/CurrencyReport" }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+
 components:
   responses:
     Archived:
@@ -828,6 +858,34 @@ components:
         name: { type: string }
         type: { type: string, enum: [cash, debit, savings, other] }
         currency: { type: string }
+    CurrencyReport:
+      type: object
+      required: [currency, income_total, expense_total, balance, expenses, incomes]
+      properties:
+        currency: { type: string }
+        income_total: { $ref: "#/components/schemas/Money" }
+        expense_total: { $ref: "#/components/schemas/Money" }
+        balance:
+          type: string
+          description: Ingresos − gastos; puede ser negativo
+          example: "2051.40"
+        expenses:
+          type: array
+          description: De mayor a menor total; empates por nombre
+          items: { $ref: "#/components/schemas/ReportLine" }
+        incomes:
+          type: array
+          items: { $ref: "#/components/schemas/ReportLine" }
+    ReportLine:
+      type: object
+      required: [category, total, percent]
+      properties:
+        category: { $ref: "#/components/schemas/Category" }
+        total: { $ref: "#/components/schemas/Money" }
+        percent:
+          type: string
+          description: Del total de esa moneda y tipo, 1 decimal, HALF_UP
+          example: "37.2"
     EntryResponse:
       type: object
       required: [data]
