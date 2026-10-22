@@ -490,6 +490,7 @@ paths:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     patch:
       summary: Editar un movimiento (solo cambia lo que viene)
+      x-payment-expense: "Si es el egreso de un pago (credit_purchase_id), solo cambian cuenta, monto y fecha; lo demás → 422 PAYMENT_EXPENSE_LOCKED"
       description: Una categoría del otro tipo convierte el egreso en ingreso, o al revés.
       operationId: updateTransaction
       requestBody:
@@ -891,6 +892,47 @@ paths:
                           - { type: "null" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /credit-purchases/{id}/pay:
+    post:
+      summary: Marcar una compra como pagada
+      description: |
+        En una sola transacción crea el egreso en la cuenta que paga (con la categoría y la
+        descripción de la compra) y saca la compra de pendientes. `paid_amount` es lo que se
+        descontó de verdad, en la moneda de esa cuenta; el API no convierte. Sin `paid_on`, hoy.
+      operationId: payCreditPurchase
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [account_id, paid_amount]
+              properties:
+                account_id: { type: string, format: uuid }
+                paid_amount: { $ref: "#/components/schemas/Money" }
+                paid_on: { $ref: "#/components/schemas/LocalDate" }
+      responses:
+        "200":
+          description: La compra pagada y su egreso
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [purchase, transaction]
+                    properties:
+                      purchase: { $ref: "#/components/schemas/CreditPurchase" }
+                      transaction: { $ref: "#/components/schemas/Entry" }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/CreditConflict" }
+        "422": { $ref: "#/components/responses/Archived" }
+
 components:
   responses:
     CreditConflict:
@@ -1058,7 +1100,7 @@ components:
             type: { type: string, enum: [cash, debit, savings, other] }
             currency: { type: string }
         category: { $ref: "#/components/schemas/Category" }
-        credit_purchase_id: { type: [string, "null"], format: uuid, description: "Desde el plan 10; hoy siempre null" }
+        credit_purchase_id: { type: [string, "null"], format: uuid, description: "La compra con tarjeta que pagó este egreso (plan 10), o null" }
     TransferEntry:
       type: object
       required: [entry_type, id, occurred_on, note, from_account, to_account, from_amount, to_amount, exchange_rate]
