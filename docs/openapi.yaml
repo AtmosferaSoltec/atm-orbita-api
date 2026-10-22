@@ -352,8 +352,114 @@ paths:
         "204": { description: Archivada }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /accounts:
+    get:
+      summary: Cuentas no archivadas con su saldo, y el ahorro total
+      operationId: listAccounts
+      responses:
+        "200":
+          description: En su orden (la primera es la cuenta por defecto)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [accounts, savings]
+                    properties:
+                      accounts:
+                        type: array
+                        items: { $ref: "#/components/schemas/Account" }
+                      savings: { $ref: "#/components/schemas/Savings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Crear una cuenta
+      description: |
+        Sin tipo de cambio, solo en la moneda principal (si no, 422 FX_RATE_NOT_CONFIGURED).
+        Con `id` ya usado y el mismo contenido responde 200 (reintento); con otro, 409 ID_CONFLICT.
+      operationId: createAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, type, currency]
+              properties:
+                id: { type: string, format: uuid }
+                name: { type: string, maxLength: 60, example: Cuenta Dólares }
+                type: { type: string, enum: [cash, debit, savings, other] }
+                currency: { type: string, example: USD }
+                initial_balance:
+                  allOf: [{ $ref: "#/components/schemas/Money" }]
+                  description: Por defecto "0.00"; nunca negativo. No cambia después.
+                include_in_savings: { type: boolean, default: true }
+      responses:
+        "201":
+          description: Creada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccountResponse" }
+        "200":
+          description: Reintento idéntico; la cuenta ya existía
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccountResponse" }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "409": { $ref: "#/components/responses/IdConflict" }
+        "422": { $ref: "#/components/responses/FxNotConfigured" }
+
+  /accounts/{id}:
+    patch:
+      summary: Cambiar nombre, tipo o si cuenta en el ahorro
+      description: La moneda y el saldo inicial no cambian; enviarlos responde 400 FIELD_NOT_EDITABLE.
+      operationId: updateAccount
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 60 }
+                type: { type: string, enum: [cash, debit, savings, other] }
+                include_in_savings: { type: boolean }
+      responses:
+        "200":
+          description: Cuenta actualizada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccountResponse" }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /accounts/{id}/archive:
+    post:
+      summary: Archivar una cuenta
+      description: Deja de listarse y de sumar al ahorro; sus movimientos se conservan. Archivar una ya archivada responde 204.
+      operationId: archiveAccount
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Archivada }
+        "404": { $ref: "#/components/responses/NotFound" }
+
 components:
   responses:
+    IdConflict:
+      description: ID_CONFLICT (id ya usado con otro contenido)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    FxNotConfigured:
+      description: FX_RATE_NOT_CONFIGURED (otra moneda sin tipo de cambio)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
     NotFound:
       description: NOT_FOUND (no existe o es de otro usuario)
       content:
@@ -447,6 +553,38 @@ components:
       required: [data]
       properties:
         data: { $ref: "#/components/schemas/Category" }
+    Account:
+      type: object
+      required: [id, name, type, currency, balance, include_in_savings]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, example: Cuenta Dólares }
+        type: { type: string, enum: [cash, debit, savings, other] }
+        currency: { type: string, example: USD }
+        balance:
+          allOf: [{ $ref: "#/components/schemas/Money" }]
+          description: Calculado (saldo inicial + ingresos − egresos + transferencias); nunca se guarda
+        include_in_savings: { type: boolean }
+    AccountResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/Account" }
+    Savings:
+      type: object
+      required: [included_count, active_count, totals]
+      properties:
+        included_count: { type: integer, description: Cuentas activas que cuentan en el ahorro }
+        active_count: { type: integer }
+        totals:
+          type: array
+          description: La principal primero; la secundaria solo si hay tipo de cambio. Redondeo una sola vez, al final.
+          items:
+            type: object
+            required: [currency, amount]
+            properties:
+              currency: { type: string }
+              amount: { $ref: "#/components/schemas/Money" }
     RefreshRequest:
       type: object
       required: [refresh_token]
