@@ -84,6 +84,32 @@ Integración con los datos de ejemplo (hoy 2 oct 2026):
 
 Ninguna.
 
+## Estado (22 oct 2026)
+
+Implementado en API y Android, en revisión. Se hizo después del plan 09, del que depende.
+
+| Comprobación | Resultado |
+|---|---|
+| `gofmt`, `go vet`, `golangci-lint run`, `go build` | Sin problemas (`0 issues`) |
+| `go test ./...` sin base / contra el Postgres local | Pasa. Integración por HTTP (2), con los datos de ejemplo cargados y "hoy" = 2 oct en Lima: `today` 2026-10-02; ajustes con 3.200000; `savings` idéntico al de `GET /accounts`; octubre 3,500.00 / 30.50; recientes Almuerzo, Taxi al trabajo, Sueldo, Cambio de dólares (idénticos a las 4 primeras filas de `GET /entries`); crédito 4 pendientes, vence 5 oct, urgente. Usuario nuevo en MXN: ahorro 0.00 solo en MXN, `fx_configured: false`, sin recientes, `credit: null`; sin sesión → 401 |
+| OpenAPI | Válido (Redocly) |
+| Android: pruebas, `lintDebug`, `installDebug` | 82 pruebas pasan (1 de `DemoHomeRepository` con las cifras del plan: S/ 7,166.30 y US$ 2,239.47, 4 de 5 cuentas, octubre 3,500.00 / 30.50, recientes en orden, 4 pendientes urgentes; 3 de `RemoteHomeRepository`); ningún aviso nuevo de lint |
+
+**En el teléfono** (API real + Postgres local):
+
+| Prueba | Resultado |
+|---|---|
+| Abrir la app | Una sola petición de datos (`GET /home`, más la renovación de la sesión); mismas cifras que antes |
+| Ver el ahorro en US$ y volver a S/ | US$ 479.25 "o S/ 1,533.60 · cambio 3.20" y de vuelta |
+| Registrar un gasto | Se vuelve a pedir `GET /home` y el ahorro y los recientes cambian |
+| Registrar una compra con tarjeta | El aviso pasa a "2 pagos pendientes · vence 4 nov" |
+
 ## Desviaciones
 
-(Se completan al implementar.)
+- **`ledger` expone `HomeReader` (ahorro y últimos movimientos) ya con la forma JSON de `GET /accounts` y `GET /entries`**, armada por su propio adaptador HTTP, en lugar de `AccountReader` y `EntriesReader` con tipos propios. Así es imposible que Inicio y esos endpoints difieran en un campo.
+- **`reports` expone `Reader.Totals`** (ingresos y gastos por moneda de un periodo) en lugar de un `ReportReader` con el reporte completo; Inicio solo usa los totales.
+- **La prueba de integración compara el ahorro con el de `GET /accounts`** en lugar de esperar S/ 7,166.30 y US$ 2,239.47: cargar los datos de ejemplo por el API no reproduce los saldos finales de las 5 cuentas. Esas cifras las comprueban la prueba del plan 04 (dominio) y la de `DemoHomeRepository` en Android.
+- **Android no usa `today` del API para validar fechas**: `DateProvider` sigue siendo la fecha del teléfono, que es la zona con la que se creó el perfil. Llevar "hoy" del API a todos los formularios queda para cuando haga falta (por ejemplo, si el usuario cambia de zona).
+- **Android: `RemoteChanges`**. REST no avisa cuando algo cambia, así que cada repositorio remoto avisa después de escribir, e Inicio se vuelve a pedir. Las demás pantallas siguen leyendo sus propios endpoints.
+- **Android: la pantalla de Inicio recibe los totales de ahorro, los conteos y el resumen de crédito** en lugar de la lista de cuentas y de compras; `DemoHomeRepository` los calcula igual en el modo demo.
+- **En las pruebas**, el sembrado de los datos de ejemplo registra el "Sueldo" del 1 oct después del "Cambio de dólares", como en `SampleData.kt`.
