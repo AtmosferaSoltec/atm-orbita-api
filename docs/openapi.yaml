@@ -448,8 +448,113 @@ paths:
         "204": { description: Archivada }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /transactions:
+    post:
+      summary: Registrar un ingreso o un egreso
+      description: |
+        El tipo sale de la categoría y la moneda, de la cuenta. Sin `occurred_on`, la fecha es
+        hoy en la zona del perfil. Con `id` ya usado y el mismo contenido responde 200.
+      operationId: createTransaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [account_id, category_id, amount]
+              properties:
+                id: { type: string, format: uuid }
+                account_id: { type: string, format: uuid }
+                category_id: { type: string, format: uuid }
+                amount: { $ref: "#/components/schemas/Money" }
+                description: { type: string, maxLength: 500 }
+                occurred_on: { $ref: "#/components/schemas/LocalDate" }
+      responses:
+        "201":
+          description: Creado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EntryResponse" }
+        "200":
+          description: Reintento idéntico; ya existía
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EntryResponse" }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/IdConflict" }
+        "422": { $ref: "#/components/responses/Archived" }
+
+  /transactions/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      summary: Editar un movimiento (solo cambia lo que viene)
+      description: Una categoría del otro tipo convierte el egreso en ingreso, o al revés.
+      operationId: updateTransaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                account_id: { type: string, format: uuid }
+                category_id: { type: string, format: uuid }
+                amount: { $ref: "#/components/schemas/Money" }
+                description: { type: string, maxLength: 500 }
+                occurred_on: { $ref: "#/components/schemas/LocalDate" }
+      responses:
+        "200":
+          description: Movimiento actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EntryResponse" }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Archived" }
+    delete:
+      summary: Eliminar un movimiento
+      description: Deja de contar en saldos, listas y reportes. Eliminar uno ya eliminado responde 204.
+      operationId: deleteTransaction
+      responses:
+        "204": { description: Eliminado }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /entries:
+    get:
+      summary: Movimientos de un periodo, del más reciente al más antiguo
+      description: Las transferencias se mezclan aquí desde el plan 06.
+      operationId: listEntries
+      parameters:
+        - { name: from, in: query, required: true, schema: { $ref: "#/components/schemas/LocalDate" } }
+        - { name: to, in: query, required: true, schema: { $ref: "#/components/schemas/LocalDate" } }
+        - { name: account_id, in: query, schema: { type: string, format: uuid } }
+        - { name: q, in: query, description: Busca en la descripción sin distinguir mayúsculas, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        "200":
+          description: Una página
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Entry" }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+
 components:
   responses:
+    Archived:
+      description: ACCOUNT_ARCHIVED o CATEGORY_ARCHIVED (no se usan en movimientos nuevos)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
     IdConflict:
       description: ID_CONFLICT (id ya usado con otro contenido)
       content:
@@ -585,6 +690,32 @@ components:
             properties:
               currency: { type: string }
               amount: { $ref: "#/components/schemas/Money" }
+    Entry:
+      type: object
+      required: [entry_type, id, kind, occurred_on, amount, currency, description, account, category, credit_purchase_id]
+      properties:
+        entry_type: { type: string, enum: [transaction], description: "transfer llega con el plan 06" }
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [income, expense] }
+        occurred_on: { $ref: "#/components/schemas/LocalDate" }
+        amount: { $ref: "#/components/schemas/Money" }
+        currency: { type: string, description: La de la cuenta }
+        description: { type: string }
+        account:
+          type: object
+          required: [id, name, type, currency]
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+            type: { type: string, enum: [cash, debit, savings, other] }
+            currency: { type: string }
+        category: { $ref: "#/components/schemas/Category" }
+        credit_purchase_id: { type: [string, "null"], format: uuid, description: "Desde el plan 10; hoy siempre null" }
+    EntryResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/Entry" }
     RefreshRequest:
       type: object
       required: [refresh_token]
