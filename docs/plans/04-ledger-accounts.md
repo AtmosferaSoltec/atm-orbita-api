@@ -115,7 +115,7 @@ Ninguna.
 
 ## Estado (22 oct 2026)
 
-Implementado en API y Android, en revisión.
+Hecho: implementado en API y Android; desviaciones aprobadas el 22 oct 2026.
 
 | Comprobación | Resultado |
 |---|---|
@@ -147,4 +147,4 @@ Implementado en API y Android, en revisión.
 - **`AccountReader` se deja para el plan 08 o 09** (Inicio y `credit` son quienes lo usan), como `CategoryReader`.
 - **Android no lee `savings`** de la respuesta: sigue calculando el total con `FxPair.savingsTotal` (da lo mismo; el plan lo permitía).
 - **Android: `DemoAccountMirror`** (temporal, hasta el plan 05), como el de categorías. Copia las cuentas del API al almacén demo con el saldo del API como inicial; los movimientos de ejemplo de la sesión mueven el saldo **en pantalla**, no en el API, y se pierden al cerrar la app.
-- **Observación de Android, sin cambiar**: al editar cualquier cuenta, la pantalla dice "La moneda no se puede cambiar porque la cuenta ya tiene movimientos.", aunque no tenga ninguno. La regla es que la moneda nunca cambia; el texto podría decir solo "La moneda no se puede cambiar.".
+- **Texto de Android corregido** (aprobado el 22 oct 2026): al editar una cuenta decía "La moneda no se puede cambiar porque la cuenta ya tiene movimientos.", aunque no tuviera ninguno. Ahora dice "La moneda de una cuenta no se puede cambiar.", que es la regla.
