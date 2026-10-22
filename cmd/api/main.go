@@ -22,6 +22,7 @@ import (
 
 	"github.com/AtmosferaSoltec/atm-orbita-api/db"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/profile"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/auth"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/clock"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/config"
@@ -97,10 +98,19 @@ func run() int {
 		return 1
 	}
 
+	profileModule := profile.New(runner, clock.System{})
+
+	// El alta corre en una sola transacción: cuenta, sesión y, por cada módulo, lo
+	// que el usuario necesita desde el primer día.
+	identityModule.OnUserRegistered(func(ctx context.Context, user identity.NewUser) error {
+		return profileModule.OnUserRegistered(ctx, user.ID, user.MainCurrency, user.Timezone)
+	})
+
 	// Registro, inicio de sesión y renovación tienen un límite por IP más estrecho.
 	limited := api.Group("", middleware.NewRateLimiter(cfg.LoginRateLimitPerMinute).Middleware())
 	protected := api.Group("", auth.Require(identityModule.Authenticator()))
 	identityModule.Routes(api, limited, protected)
+	profileModule.Routes(api, protected)
 
 	if err := httpserver.Serve(ctx, router, cfg.Port, log); err != nil {
 		log.Error("server", "error", err)
