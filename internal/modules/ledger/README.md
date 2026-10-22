@@ -17,6 +17,7 @@ Las migraciones `00003` y `00004` dan lo inicial (las 9 categorías y "Efectivo"
 |---|---|
 | `New(runner, clock, profile.Reader)`, `Routes(protected)` | `cmd/api/main.go`. Del perfil lee las monedas, el tipo de cambio y "hoy" en su zona |
 | `OnUserRegistered(ctx, userID, mainCurrency)` | El gancho de alta de `identity` (lo cablea `main.go`, después del perfil): crea las 9 categorías y "Efectivo" en la misma transacción |
+| `CategoryReader()`: `Categories(ctx, userID, ids)`, también las archivadas | El módulo `credit` (plan 09), para validar y mostrar la categoría de una compra |
 | `ReportQuery()`: `TotalsByCategory(ctx, userID, from, to)` | El módulo `reports` (plan 07): sumas de los movimientos por moneda de la cuenta, tipo y categoría, hechas en la base |
 
 ## Reglas

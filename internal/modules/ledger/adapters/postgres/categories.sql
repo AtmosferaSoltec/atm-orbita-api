@@ -26,3 +26,10 @@ WHERE id = $1 AND user_id = $2 AND archived_at IS NULL;
 UPDATE categories
 SET archived_at = now(), name_normalized = NULL, updated_at = now()
 WHERE id = $1 AND user_id = $2 AND archived_at IS NULL;
+
+-- Para otros módulos (credit): las categorías pedidas del usuario, también las
+-- archivadas (una compra conserva la suya).
+-- name: ListCategoriesByIDs :many
+SELECT id, name, kind, color, archived_at
+FROM categories
+WHERE user_id = sqlc.arg(user_id) AND id = ANY(sqlc.arg(ids)::uuid[]);

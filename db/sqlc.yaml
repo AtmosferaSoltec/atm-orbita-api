@@ -73,3 +73,14 @@ sql:
         out: ../internal/modules/ledger/adapters/postgres/sqlcgen
         sql_package: pgx/v5
         emit_pointers_for_null_types: true
+  - engine: postgresql
+    schema:
+      - migrations/00007_credit_create_cards_and_purchases.sql
+    queries:
+      - ../internal/modules/credit/adapters/postgres/queries.sql
+    gen:
+      go:
+        package: sqlcgen
+        out: ../internal/modules/credit/adapters/postgres/sqlcgen
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true

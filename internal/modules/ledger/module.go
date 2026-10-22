@@ -30,6 +30,7 @@ type Module struct {
 	transactionsHandler *ledgerhttp.Transactions
 	transfersHandler    *ledgerhttp.Transfers
 	transactionRepo     postgres.Transactions
+	categoryRepo        postgres.Categories
 }
 
 // New crea el módulo. Del perfil lee las monedas, el tipo de cambio y "hoy".
@@ -49,6 +50,7 @@ func New(runner tx.Runner, c clock.Clock, profiles profile.Reader) *Module {
 		accountsHandler:     ledgerhttp.NewAccounts(accounts),
 		transactionsHandler: ledgerhttp.NewTransactions(transactions),
 		transactionRepo:     transactionRepo,
+		categoryRepo:        categoryRepo,
 		transfersHandler:    ledgerhttp.NewTransfers(transfers),
 	}
 }
@@ -69,6 +71,41 @@ func (m *Module) OnUserRegistered(ctx context.Context, userID uuid.UUID, mainCur
 		return err
 	}
 	return m.accounts.CreateInitial(ctx, userID, mainCurrency)
+}
+
+// ErrNotFound: lo pedido no existe o es de otro usuario.
+var ErrNotFound = domain.ErrNotFound
+
+// CategoryInfo es una categoría vista desde otro módulo.
+type CategoryInfo struct {
+	ID       uuid.UUID
+	Name     string
+	Kind     string
+	Color    string
+	Archived bool
+}
+
+// CategoryReader es lo que credit lee de las categorías: las del usuario por su
+// id, también las archivadas (cada módulo decide si las acepta).
+type CategoryReader interface {
+	Categories(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]CategoryInfo, error)
+}
+
+// CategoryReader da acceso de lectura a las categorías.
+func (m *Module) CategoryReader() CategoryReader { return categoryReader{m.categoryRepo} }
+
+type categoryReader struct{ repo postgres.Categories }
+
+func (r categoryReader) Categories(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]CategoryInfo, error) {
+	rows, err := r.repo.Find(ctx, userID, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uuid.UUID]CategoryInfo, len(rows))
+	for _, c := range rows {
+		out[c.ID] = CategoryInfo{ID: c.ID, Name: c.Name, Kind: string(c.Kind), Color: c.Color, Archived: c.Archived}
+	}
+	return out, nil
 }
 
 // CategoryTotal es la suma de los movimientos de una categoría en un periodo, en

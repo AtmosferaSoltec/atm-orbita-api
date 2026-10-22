@@ -134,6 +134,53 @@ func (q *Queries) ListCategories(ctx context.Context, userID uuid.UUID) ([]ListC
 	return items, nil
 }
 
+const listCategoriesByIDs = `-- name: ListCategoriesByIDs :many
+SELECT id, name, kind, color, archived_at
+FROM categories
+WHERE user_id = $1 AND id = ANY($2::uuid[])
+`
+
+type ListCategoriesByIDsParams struct {
+	UserID uuid.UUID
+	Ids    []uuid.UUID
+}
+
+type ListCategoriesByIDsRow struct {
+	ID         uuid.UUID
+	Name       string
+	Kind       string
+	Color      string
+	ArchivedAt *time.Time
+}
+
+// Para otros módulos (credit): las categorías pedidas del usuario, también las
+// archivadas (una compra conserva la suya).
+func (q *Queries) ListCategoriesByIDs(ctx context.Context, arg ListCategoriesByIDsParams) ([]ListCategoriesByIDsRow, error) {
+	rows, err := q.db.Query(ctx, listCategoriesByIDs, arg.UserID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCategoriesByIDsRow
+	for rows.Next() {
+		var i ListCategoriesByIDsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Kind,
+			&i.Color,
+			&i.ArchivedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateCategory = `-- name: UpdateCategory :execrows
 UPDATE categories
 SET name = $3, name_normalized = $4, color = $5, updated_at = now()

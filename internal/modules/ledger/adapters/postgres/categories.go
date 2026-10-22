@@ -106,3 +106,20 @@ func isNameTaken(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == uniqueViolation && pgErr.ConstraintName == categoryNameConstraint
 }
+
+// Find devuelve las categorías pedidas del usuario, también las archivadas.
+func (r Categories) Find(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) ([]app.StoredCategory, error) {
+	rows, err := r.q(ctx).ListCategoriesByIDs(ctx, sqlcgen.ListCategoriesByIDsParams{UserID: userID, Ids: ids})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]app.StoredCategory, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, app.StoredCategory{
+			Category: domain.Category{ID: row.ID, Name: row.Name, Kind: domain.Kind(row.Kind), Color: row.Color},
+			UserID:   userID,
+			Archived: row.ArchivedAt != nil,
+		})
+	}
+	return out, nil
+}
