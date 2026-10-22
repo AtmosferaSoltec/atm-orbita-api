@@ -105,7 +105,8 @@ func run() int {
 	profileModule := profile.New(runner, clock.System{})
 	ledgerModule := ledger.New(runner, clock.System{}, profileModule.Reader())
 	reportsModule := reports.New(ledgerModule.ReportQuery(), profileModule.Reader())
-	creditModule := credit.New(runner, clock.System{}, ledgerModule.CategoryReader(), profileModule.Reader())
+	creditModule := credit.New(runner, clock.System{}, ledgerModule.CategoryReader(), profileModule.Reader(), ledgerModule.PaymentLedger())
+	ledgerModule.OnPaymentDeleted(creditModule)
 	homeModule := home.New(profileModule.Reader(), ledgerModule.HomeReader(), reportsModule.Reader(), creditModule.CreditSummary())
 
 	// El alta corre en una sola transacción: cuenta, sesión y, por cada módulo, lo
