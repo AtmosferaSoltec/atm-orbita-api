@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	pgxdecimal "github.com/jackc/pgx-shopspring-decimal"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -29,6 +31,11 @@ func Open(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	}
 	cfg.ConnConfig.RuntimeParams["statement_timeout"] = statementTimeout
 	cfg.ConnConfig.RuntimeParams["application_name"] = "orbita-api"
+	// NUMERIC se lee y se escribe como decimal.Decimal: el dinero nunca pasa por float.
+	cfg.AfterConnect = func(_ context.Context, conn *pgx.Conn) error {
+		pgxdecimal.Register(conn.TypeMap())
+		return nil
+	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
