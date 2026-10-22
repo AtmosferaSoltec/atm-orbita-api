@@ -86,7 +86,7 @@ Ninguna.
 
 ## Estado (22 oct 2026)
 
-Implementado en API y Android, en revisión. Se hizo después del plan 09, del que depende.
+Hecho: implementado en API y Android; desviaciones aprobadas el 22 oct 2026. Se hizo después del plan 09, del que depende.
 
 | Comprobación | Resultado |
 |---|---|

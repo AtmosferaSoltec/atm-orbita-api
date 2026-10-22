@@ -4,7 +4,7 @@ Planes para construir el backend real de la app Android `atm-orbita-android`, si
 
 - Escritos el 21 oct 2026, tras revisar completo el proyecto Android: sus documentos (`docs/01`…`06`, `ORBITA_SPEC.md`, `CLAUDE.md`), el dominio, `data/demo`, los ViewModels, las pantallas y sus pruebas.
 - **Fuente de verdad de las reglas:** el código de Android (`data/demo` y `domain`). Donde sus documentos dicen otra cosa, manda el código y la diferencia queda anotada en el plan.
-- Estado: **aprobados el 21 oct 2026**, con las decisiones de abajo. Se implementan de a uno; del 00 al 07 y el 09 están hechos, y el 08 implementado y en revisión (el 09 se hizo antes porque el 08 depende de él).
+- Estado: **aprobados el 21 oct 2026**, con las decisiones de abajo. Se implementan de a uno; del 00 al 09 están hechos (el 09 se hizo antes que el 08, que depende de él).
 - Rama: todo en `develop`. Flujo `develop` → `main` → `production`; promover lo decide el usuario.
 
 ## Orden y dependencias
@@ -21,7 +21,7 @@ Un plan = una funcionalidad que se entrega, se prueba y se revisa sola. Se ejecu
 | 05 | [Movimientos (ingresos y egresos)](05-ledger-transactions.md) | `ledger` | Nuevo/Editar movimiento, Lista de movimientos | 04 | Hecho |
 | 06 | [Transferencias](06-ledger-transfers.md) | `ledger` | Transferir / Editar transferencia | 05 | Hecho |
 | 07 | [Reportes](07-reports.md) | `reports` | Reportes (Mes, Año, Rango) | 05 | Hecho |
-| 08 | [Inicio](08-home.md) | `home` | Inicio | 04–07, 09 | Implementado, en revisión |
+| 08 | [Inicio](08-home.md) | `home` | Inicio | 04–07, 09 | Hecho |
 | 09 | [Tarjetas y compras pendientes](09-credit-cards-purchases.md) | `credit` | Tarjetas de Crédito, Nueva/Editar tarjeta, compra con tarjeta | 03, 04 | Hecho |
 | 10 | [Pagar una compra con tarjeta](10-credit-payments.md) | `credit`, `ledger` | Marcar como pagada; editar/eliminar el egreso de un pago | 05, 09 | Aprobado |
 | 11 | [Recuperar contraseña](11-identity-password-recovery.md) | `identity`, `integrations/mail` | ¿Olvidaste tu contraseña? (3 pantallas) | 01 | Aprobado |
