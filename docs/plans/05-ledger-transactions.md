@@ -119,6 +119,43 @@ Integración:
 
 Ninguna.
 
+## Estado (22 oct 2026)
+
+Implementado en API y Android, en revisión.
+
+| Comprobación | Resultado |
+|---|---|
+| `gofmt`, `go vet`, `golangci-lint run`, `go build` | Sin problemas (`0 issues`) |
+| `go test ./...` sin base / contra el Postgres local | Pasa. Dominio: monto, descripción (500 caracteres), fecha nunca futura, periodo, búsqueda que escapa `%` `_` `\`. Servicio (7): orden de validación, "hoy" del perfil, `kind` de la categoría, archivadas, cambiar a una categoría del otro tipo, eliminar dos veces, reintento. Integración por HTTP (6): egreso de 45.52 baja el saldo exacto y eliminarlo lo devuelve; a las 20:00 de Lima (01:00 UTC) queda con la fecha de Lima; mañana → `FUTURE_DATE`; cuenta o categoría de otro usuario → 404; cuenta archivada → 422; septiembre de `SampleData.kt` (16 movimientos) en el orden de la app, por páginas; `q=SUPER` encuentra los dos "Supermercado"; `account_id` filtra; reintento con el mismo `id` → 200 sin duplicar |
+| Migración `00005`: `down` y `up` | Funciona |
+| OpenAPI | Válido (Redocly) |
+| Android: pruebas, `lintDebug`, `installDebug` | 74 pruebas pasan (6 de `RemoteEntriesRepository`, 1 de `DemoEntriesMix`); ningún aviso de lint en los archivos nuevos |
+
+**En el teléfono** (API real + Postgres local):
+
+| Prueba | Resultado |
+|---|---|
+| Abrir Inicio | "Últimos movimientos" vacío: ya no salen los de ejemplo |
+| Gasto de S/ 25 "Almuerzo real" | Se guarda con la fecha real (22 oct); el ahorro baja a S/ -25.00 |
+| Editar: S/ 30 y Transporte | La lista cambia al instante |
+| Pasarlo a ingreso (Sueldo) | En la base queda `income`; Efectivo muestra S/ 30.00 |
+| Eliminarlo | El ahorro vuelve a S/ 0.00; en la base queda con `deleted_at` |
+| Gasto "Cafe", cerrar y abrir la app | Sigue en Inicio |
+| Transferencia (demo) de S/ 100 de Ahorros a Efectivo | Sale en la lista junto al gasto; saldos S/ 90.00 y S/ 4,700.00 |
+
 ## Desviaciones
 
-(Se completan al implementar.)
+- **`POST` y `PATCH /transactions` responden la fila completa de la lista** (`entry_type`, cuenta y categoría), la misma forma que `GET /entries`, en lugar de un objeto `transaction` aparte.
+- **`INVALID_FORMAT`** para un UUID, una fecha o una página mal formados (`ACCOUNT_REQUIRED` y `CATEGORY_REQUIRED` son solo para cuando faltan). En `GET /entries` sin `from` o `to` también es `INVALID_FORMAT`; `RANGE_INVALID` queda para un periodo invertido o de 10 años o más.
+- **Reintento sin fecha**: si el `POST` no trae `occurred_on`, la fecha no cuenta al comparar (el reintento puede llegar al día siguiente).
+- **Editar sin cambiar una cuenta o categoría archivada** la conserva; solo se rechaza elegirla.
+- **`page_size` por defecto 50** (máx. 100) y `page` hasta 1,000,000 (evita desbordar el desplazamiento).
+- **`EntriesReader` y `ReportQuery` se dejan para los planes 08 y 07**, que son quienes los usan.
+- **sqlc lee `DATE` como `time.Time`** (override global), que se convierte a `dates.LocalDate`.
+- **El puerto del perfil en `ledger` (`app.Profile`) da también "hoy"** en la zona del usuario.
+- **Android pide los 5 meses que muestra en una sola consulta**, leyendo todas sus páginas, en lugar de un mes por vez (mismo resultado, menos código).
+- **Android usa la fecha real del teléfono como "hoy"** cuando usa el API (`AppModule.provideDateProvider`). Antes era el 2 oct 2026 fijo de los datos de ejemplo, y un movimiento de hoy no habría salido en la lista.
+- **Android: `DemoEntriesMix`** (temporal, hasta el plan 06). Los movimientos van al API y las transferencias siguen en el modo demo; las listas muestran también las transferencias de la sesión entre cuentas del API (y el gasto de un pago de tarjeta), nunca las de ejemplo. Dentro del mismo día, por ahora, las del API salen primero.
+- **Los puentes de categorías y cuentas se quedan más tiempo** de lo que decían los planes 03 y 04: hasta que las transferencias (06) y las tarjetas (09, 10) pasen al API.
+- **Mezcla esperada hasta el plan 07**: los totales "Ingresos · mes" y "Gastos · mes" de Inicio y la pantalla Reportes siguen siendo los de ejemplo.
+- **Android no traduce `ACCOUNT_ARCHIVED` ni `CATEGORY_ARCHIVED`**: la app no ofrece cuentas ni categorías archivadas, así que solo pasaría si se archivan desde otro dispositivo; se vería el mensaje genérico.
