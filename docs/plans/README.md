@@ -4,7 +4,7 @@ Planes para construir el backend real de la app Android `atm-orbita-android`, si
 
 - Escritos el 21 oct 2026, tras revisar completo el proyecto Android: sus documentos (`docs/01`…`06`, `ORBITA_SPEC.md`, `CLAUDE.md`), el dominio, `data/demo`, los ViewModels, las pantallas y sus pruebas.
 - **Fuente de verdad de las reglas:** el código de Android (`data/demo` y `domain`). Donde sus documentos dicen otra cosa, manda el código y la diferencia queda anotada en el plan.
-- Estado: **aprobados el 21 oct 2026**, con las decisiones de abajo. Se implementan de a uno; el 00 está hecho y el 01 implementado y en revisión.
+- Estado: **aprobados el 21 oct 2026**, con las decisiones de abajo. Se implementan de a uno; el 00 y el 01 están hechos, y el 02 implementado y en revisión.
 - Rama: todo en `develop`. Flujo `develop` → `main` → `production`; promover lo decide el usuario.
 
 ## Orden y dependencias
@@ -14,8 +14,8 @@ Un plan = una funcionalidad que se entrega, se prueba y se revisa sola. Se ejecu
 | # | Plan | Módulo(s) | Pantallas de Android | Depende de | Estado |
 |---|---|---|---|---|---|
 | 00 | [Fundaciones](00-foundations.md) | `platform`, `integrations/mail` | — | — | Hecho |
-| 01 | [Registro, inicio y cierre de sesión](01-identity-sessions.md) | `identity` | Iniciar sesión, Registro, sesión persistente | 00 | Implementado, en revisión |
-| 02 | [Perfil, monedas y tipo de cambio](02-profile-settings.md) | `profile` | Ajustes (monedas, tipo de cambio), Registro (moneda) | 01 | Aprobado |
+| 01 | [Registro, inicio y cierre de sesión](01-identity-sessions.md) | `identity` | Iniciar sesión, Registro, sesión persistente | 00 | Hecho |
+| 02 | [Perfil, monedas y tipo de cambio](02-profile-settings.md) | `profile` | Ajustes (monedas, tipo de cambio), Registro (moneda) | 01 | Implementado, en revisión |
 | 03 | [Categorías](03-ledger-categories.md) | `ledger` | Categorías, Nueva/Editar categoría | 01, 02 | Aprobado |
 | 04 | [Cuentas](04-ledger-accounts.md) | `ledger` | Cuentas, Nueva/Editar cuenta | 02, 03 | Aprobado |
 | 05 | [Movimientos (ingresos y egresos)](05-ledger-transactions.md) | `ledger` | Nuevo/Editar movimiento, Lista de movimientos | 04 | Aprobado |

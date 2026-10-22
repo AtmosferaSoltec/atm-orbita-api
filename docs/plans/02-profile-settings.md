@@ -122,6 +122,35 @@ Integración:
 
 Ninguna.
 
+## Estado (21 oct 2026)
+
+Implementado en API y Android, en revisión.
+
+| Comprobación | Resultado |
+|---|---|
+| `go vet`, `golangci-lint run`, `go build` | Sin problemas (`0 issues`) |
+| `go test ./...` sin base / contra el Postgres local | Pasa: 8 del dominio (vectores de `MoneyRulesTest.kt`: 20.00 USD → 64.00 PEN, inverso, fuera del par, sin tipo de cambio), 12 del servicio y 7 de integración por HTTP (alta con PEN, MXN y USD; par sin tipo de cambio o con cero rechazado; número JSON rechazado; historial; inverso al intercambiar; catálogo público; sesión obligatoria; aislamiento; "hoy" en la zona del usuario) |
+| Migración `00002`: `down` y `up` | Funciona |
+| Android: pruebas, `lintDebug`, `installDebug` | 53 pruebas pasan (8 nuevas de `RemoteSettingsRepository`) |
+
+**En el teléfono** (API real + Postgres local):
+
+| Prueba | Resultado |
+|---|---|
+| Registro con soles | Inicio muestra "Configura tu tipo de cambio ›" y el ahorro sin la cuenta en dólares (S/ 6,366.30) |
+| Ajustes: escribir `3.20` | Se guarda una sola fila (USD → PEN, 3.200000); el inverso muestra 0.3125 |
+| Ver ahorro en US$ | El perfil queda en USD; Inicio muestra US$ 2,239.47 y "o S/ 7,166.30 · cambio 3.20" |
+| Sesión revocada en el servidor | Al abrir la app, vuelve a Iniciar sesión |
+| Segunda cuenta con pesos mexicanos | Perfil MXN/USD sin tipo de cambio; no ve el de la cuenta anterior |
+
+Los saldos y movimientos siguen siendo los datos de ejemplo (en soles) hasta los planes 04 y 05: con una cuenta en MXN, el ahorro sale en MX$ 0.00. Es la mezcla esperada; no se publica así.
+
 ## Desviaciones
 
-(Se completan al implementar.)
+- **`pgx-shopspring-decimal`**: dependencia nueva para leer y escribir `NUMERIC` como `decimal.Decimal`, registrada en todas las conexiones del pool. sqlc mapea `numeric` a ese tipo. Sirve a todos los módulos con dinero.
+- **sqlc por módulo**: cada entrada de `db/sqlc.yaml` lee solo las migraciones de su módulo, así cada uno genera los modelos de sus tablas y nada más.
+- **`identity.FastPasswordParams`**: la prueba de arquitectura detectó que las pruebas de `profile` importaban un paquete interno de `identity`; ahora usan su API pública.
+- **El tipo de cambio en Ajustes se guarda al dejar de escribir** (0.7 s) y al salir de la pantalla, no con cada tecla: cada guardado es una fila del historial, y con cada tecla "3.20" se guardaba como "3", "3.2" y "3.20" (y `ActionViewModel` ignora un guardado mientras otro sigue en curso, así que podía quedar "3"). Es un cambio de la pantalla de Android.
+- **Android redondea el tipo de cambio a 6 decimales** antes de enviarlo (el formato del API); el inverso que calcula al intercambiar el par ya tiene 6.
+- **Al cambiar de sesión se borra lo que los repositorios remotos guardan en memoria** (`ApiSession.onSessionChange`), para que la siguiente persona nunca vea los datos de la anterior.
+- **Pendiente de UX**: cuando el servidor cierra la sesión, la app vuelve a Iniciar sesión pero todavía no muestra "Tu sesión terminó. Inicia sesión de nuevo." (`ORBITA_SPEC` §4.1). Necesita que `AuthRepository` distinga un cierre del servidor de uno propio; se puede agregar en cualquier plan.
