@@ -110,7 +110,7 @@ Ninguna.
 
 ## Estado (22 oct 2026)
 
-Implementado en API y Android, en revisión.
+Hecho: implementado en API y Android; desviaciones aprobadas el 22 oct 2026.
 
 | Comprobación | Resultado |
 |---|---|
