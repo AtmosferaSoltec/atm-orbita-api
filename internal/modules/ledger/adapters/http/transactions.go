@@ -92,7 +92,7 @@ func (h *Transactions) create(c *gin.Context) {
 	if !bind(c, &req) {
 		return
 	}
-	ids, ok := parseIDs(c, map[string]*string{"id": req.ID, "account_id": req.AccountID, "category_id": req.CategoryID})
+	ids, ok := parseIDs(c, idField{"id", req.ID}, idField{"account_id", req.AccountID}, idField{"category_id", req.CategoryID})
 	if !ok {
 		return
 	}
@@ -120,7 +120,7 @@ func (h *Transactions) update(c *gin.Context) {
 	if !bind(c, &req) {
 		return
 	}
-	ids, ok := parseIDs(c, map[string]*string{"account_id": req.AccountID, "category_id": req.CategoryID})
+	ids, ok := parseIDs(c, idField{"account_id", req.AccountID}, idField{"category_id", req.CategoryID})
 	if !ok {
 		return
 	}
@@ -179,28 +179,38 @@ func (h *Transactions) list(c *gin.Context) {
 		respondError(c, err)
 		return
 	}
-	items := make([]entryResponse, 0, len(page.Items))
+	items := make([]any, 0, len(page.Items))
 	for _, e := range page.Items {
-		items = append(items, toEntryResponse(e))
+		if e.Transfer != nil {
+			items = append(items, toTransferResponse(*e.Transfer))
+		} else {
+			items = append(items, toEntryResponse(*e.Movement))
+		}
 	}
 	apierror.Page(c, items, apierror.Meta{Page: page.Page, PageSize: page.PageSize, Total: page.Total})
 }
 
-// parseIDs lee los UUID opcionales del cuerpo; uno mal formado es INVALID_FORMAT.
-func parseIDs(c *gin.Context, fields map[string]*string) (map[string]*uuid.UUID, bool) {
+// idField es un UUID opcional del cuerpo, con el nombre de su campo.
+type idField struct {
+	name  string
+	value *string
+}
+
+// parseIDs lee los UUID opcionales del cuerpo, en orden; uno mal formado es
+// INVALID_FORMAT.
+func parseIDs(c *gin.Context, fields ...idField) (map[string]*uuid.UUID, bool) {
 	out := make(map[string]*uuid.UUID, len(fields))
 	var problems []apierror.FieldError
-	for _, field := range []string{"id", "account_id", "category_id"} {
-		text, ok := fields[field]
-		if !ok || text == nil {
+	for _, field := range fields {
+		if field.value == nil {
 			continue
 		}
-		id, err := uuid.Parse(*text)
+		id, err := uuid.Parse(*field.value)
 		if err != nil {
-			problems = append(problems, apierror.FieldError{Field: field, Code: domain.CodeInvalidFormat})
+			problems = append(problems, apierror.FieldError{Field: field.name, Code: domain.CodeInvalidFormat})
 			continue
 		}
-		out[field] = &id
+		out[field.name] = &id
 	}
 	if len(problems) > 0 {
 		apierror.Respond(c, apierror.Validation(problems...))

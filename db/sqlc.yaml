@@ -61,10 +61,12 @@ sql:
       - migrations/00003_ledger_create_categories.sql
       - migrations/00004_ledger_create_accounts.sql
       - migrations/00005_ledger_create_transactions.sql
+      - migrations/00006_ledger_create_transfers.sql
     queries:
       - ../internal/modules/ledger/adapters/postgres/categories.sql
       - ../internal/modules/ledger/adapters/postgres/accounts.sql
       - ../internal/modules/ledger/adapters/postgres/transactions.sql
+      - ../internal/modules/ledger/adapters/postgres/transfers.sql
     gen:
       go:
         package: sqlcgen

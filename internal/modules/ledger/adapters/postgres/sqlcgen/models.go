@@ -50,3 +50,18 @@ type Transaction struct {
 	UpdatedAt   time.Time
 	DeletedAt   *time.Time
 }
+
+type Transfer struct {
+	ID            uuid.UUID
+	UserID        uuid.UUID
+	FromAccountID uuid.UUID
+	ToAccountID   uuid.UUID
+	FromAmount    decimal.Decimal
+	ToAmount      decimal.Decimal
+	ExchangeRate  decimal.NullDecimal
+	OccurredOn    time.Time
+	Note          string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	DeletedAt     *time.Time
+}

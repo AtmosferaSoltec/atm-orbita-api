@@ -1,5 +1,5 @@
-// Package ledger es el libro del usuario: categorías y cuentas y, en los planes
-// que siguen, movimientos y transferencias.
+// Package ledger es el libro del usuario: categorías, cuentas, movimientos y
+// transferencias.
 //
 // Es la API pública del módulo: los demás módulos y main solo usan lo de aquí.
 package ledger
@@ -27,6 +27,7 @@ type Module struct {
 	categoriesHandler   *ledgerhttp.Categories
 	accountsHandler     *ledgerhttp.Accounts
 	transactionsHandler *ledgerhttp.Transactions
+	transfersHandler    *ledgerhttp.Transfers
 }
 
 // New crea el módulo. Del perfil lee las monedas, el tipo de cambio y "hoy".
@@ -37,12 +38,14 @@ func New(runner tx.Runner, c clock.Clock, profiles profile.Reader) *Module {
 	categories := app.NewCategoryService(categoryRepo, c)
 	accounts := app.NewAccountService(accountRepo, source, c)
 	transactions := app.NewTransactionService(postgres.NewTransactions(runner), accountRepo, categoryRepo, source, c)
+	transfers := app.NewTransferService(postgres.NewTransfers(runner), accountRepo, source, c)
 	return &Module{
 		categories:          categories,
 		accounts:            accounts,
 		categoriesHandler:   ledgerhttp.NewCategories(categories),
 		accountsHandler:     ledgerhttp.NewAccounts(accounts),
 		transactionsHandler: ledgerhttp.NewTransactions(transactions),
+		transfersHandler:    ledgerhttp.NewTransfers(transfers),
 	}
 }
 
@@ -51,6 +54,7 @@ func (m *Module) Routes(protected gin.IRoutes) {
 	m.categoriesHandler.Routes(protected)
 	m.accountsHandler.Routes(protected)
 	m.transactionsHandler.Routes(protected)
+	m.transfersHandler.Routes(protected)
 }
 
 // OnUserRegistered crea las 9 categorías iniciales y la cuenta "Efectivo" en la

@@ -62,23 +62,35 @@ type Entry struct {
 
 // ValidateAmount lee un monto obligatorio y mayor que cero, con hasta 2 decimales.
 func ValidateAmount(text *string, problems *ValidationError) decimal.Decimal {
+	value, _ := ValidateAmountField("amount", text, problems)
+	return value
+}
+
+// ValidateAmountField es ValidateAmount para el campo field; ok dice si es válido.
+func ValidateAmountField(field string, text *string, problems *ValidationError) (decimal.Decimal, bool) {
 	if text == nil {
-		problems.Add("amount", CodeAmountRequired)
-		return decimal.Zero
+		problems.Add(field, CodeAmountRequired)
+		return decimal.Zero, false
 	}
 	amount, err := money.ParseAmount(*text)
 	if err != nil || !amount.IsPositive() {
-		problems.Add("amount", CodeAmountRequired)
-		return decimal.Zero
+		problems.Add(field, CodeAmountRequired)
+		return decimal.Zero, false
 	}
-	return amount.Decimal()
+	return amount.Decimal(), true
 }
 
 // ValidateDescription recorta la descripción y revisa su largo en caracteres.
 func ValidateDescription(text string, problems *ValidationError) string {
+	return ValidateTextField("description", text, problems)
+}
+
+// ValidateTextField es ValidateDescription para el campo field (la nota de una
+// transferencia usa el mismo código).
+func ValidateTextField(field, text string, problems *ValidationError) string {
 	clean := strings.TrimSpace(text)
 	if utf8.RuneCountInString(clean) > DescriptionMaxLength {
-		problems.Add("description", CodeDescriptionTooLong)
+		problems.Add(field, CodeDescriptionTooLong)
 	}
 	return clean
 }

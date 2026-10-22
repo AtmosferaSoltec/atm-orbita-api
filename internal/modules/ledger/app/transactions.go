@@ -37,7 +37,8 @@ type Transactions interface {
 	// Update y Delete devuelven domain.ErrNotFound si no hay uno propio sin eliminar.
 	Update(ctx context.Context, userID uuid.UUID, t domain.Transaction) error
 	Delete(ctx context.Context, userID, id uuid.UUID) error
-	List(ctx context.Context, userID uuid.UUID, f EntryFilter) ([]domain.Entry, error)
+	// List devuelve una página de la lista: movimientos y transferencias mezclados.
+	List(ctx context.Context, userID uuid.UUID, f EntryFilter) ([]domain.ListEntry, error)
 	Count(ctx context.Context, userID uuid.UUID, f EntryFilter) (int64, error)
 }
 
@@ -92,7 +93,7 @@ func (s *TransactionService) Create(ctx context.Context, userID uuid.UUID, in Cr
 	}
 	t.AccountID, t.CategoryID = *in.AccountID, *in.CategoryID
 
-	account, err := s.usableAccount(ctx, userID, t.AccountID)
+	account, err := usableAccount(ctx, s.accounts, userID, t.AccountID)
 	if err != nil {
 		return domain.Entry{}, false, err
 	}
@@ -171,7 +172,7 @@ func (s *TransactionService) Update(ctx context.Context, userID, id uuid.UUID, i
 	var account StoredAccount
 	if in.AccountID != nil && *in.AccountID != current.AccountID {
 		next.AccountID = *in.AccountID
-		account, err = s.usableAccount(ctx, userID, next.AccountID)
+		account, err = usableAccount(ctx, s.accounts, userID, next.AccountID)
 	} else {
 		account, err = s.accounts.Get(ctx, userID, next.AccountID)
 	}
@@ -220,7 +221,7 @@ type EntryQuery struct {
 
 // EntryPage es una página de la lista y el total de filas del periodo.
 type EntryPage struct {
-	Items    []domain.Entry
+	Items    []domain.ListEntry
 	Page     int
 	PageSize int
 	Total    int64
@@ -263,8 +264,8 @@ func (s *TransactionService) ListEntries(ctx context.Context, userID uuid.UUID, 
 	return EntryPage{Items: items, Page: q.Page, PageSize: q.PageSize, Total: total}, nil
 }
 
-func (s *TransactionService) usableAccount(ctx context.Context, userID, id uuid.UUID) (StoredAccount, error) {
-	account, err := s.accounts.Get(ctx, userID, id)
+func usableAccount(ctx context.Context, accounts Accounts, userID, id uuid.UUID) (StoredAccount, error) {
+	account, err := accounts.Get(ctx, userID, id)
 	if err == nil && account.Archived {
 		return StoredAccount{}, domain.ErrAccountArchived
 	}

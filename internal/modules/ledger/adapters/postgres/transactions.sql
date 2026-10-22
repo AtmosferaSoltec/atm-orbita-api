@@ -20,26 +20,53 @@ UPDATE transactions
 SET deleted_at = now(), updated_at = now()
 WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL;
 
--- Los movimientos de un periodo, con su cuenta y su categoría, del más reciente
--- al más antiguo. account_id y pattern (ILIKE, ya escapado) son opcionales.
--- name: ListEntries :many
+-- Una página de la lista: movimientos y transferencias mezclados, del más
+-- reciente al más antiguo. Solo trae qué es cada fila; los detalles los leen
+-- ListTransactionsByIDs y ListTransfersByIDs. account_id coincide con la cuenta
+-- del movimiento o con cualquiera de las dos de la transferencia; pattern (ILIKE,
+-- ya escapado) busca en la descripción o en la nota. Los dos son opcionales.
+-- name: ListEntryKeys :many
+SELECT e.entry_type::text AS entry_type, e.id::uuid AS id
+FROM (
+    SELECT 'transaction' AS entry_type, t.id, t.occurred_on, t.created_at
+    FROM transactions t
+    WHERE t.user_id = sqlc.arg(user_id) AND t.deleted_at IS NULL
+      AND t.occurred_on BETWEEN sqlc.arg(date_from) AND sqlc.arg(date_to)
+      AND (sqlc.narg(account_id)::uuid IS NULL OR t.account_id = sqlc.narg(account_id))
+      AND (sqlc.narg(pattern)::text IS NULL OR t.description ILIKE sqlc.narg(pattern))
+    UNION ALL
+    SELECT 'transfer' AS entry_type, tr.id, tr.occurred_on, tr.created_at
+    FROM transfers tr
+    WHERE tr.user_id = sqlc.arg(user_id) AND tr.deleted_at IS NULL
+      AND tr.occurred_on BETWEEN sqlc.arg(date_from) AND sqlc.arg(date_to)
+      AND (sqlc.narg(account_id)::uuid IS NULL
+           OR tr.from_account_id = sqlc.narg(account_id) OR tr.to_account_id = sqlc.narg(account_id))
+      AND (sqlc.narg(pattern)::text IS NULL OR tr.note ILIKE sqlc.narg(pattern))
+) e
+ORDER BY e.occurred_on DESC, e.created_at DESC, e.id DESC
+LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
+
+-- name: CountEntries :one
+SELECT (
+    (SELECT count(*) FROM transactions t
+     WHERE t.user_id = sqlc.arg(user_id) AND t.deleted_at IS NULL
+       AND t.occurred_on BETWEEN sqlc.arg(date_from) AND sqlc.arg(date_to)
+       AND (sqlc.narg(account_id)::uuid IS NULL OR t.account_id = sqlc.narg(account_id))
+       AND (sqlc.narg(pattern)::text IS NULL OR t.description ILIKE sqlc.narg(pattern)))
+  + (SELECT count(*) FROM transfers tr
+     WHERE tr.user_id = sqlc.arg(user_id) AND tr.deleted_at IS NULL
+       AND tr.occurred_on BETWEEN sqlc.arg(date_from) AND sqlc.arg(date_to)
+       AND (sqlc.narg(account_id)::uuid IS NULL
+            OR tr.from_account_id = sqlc.narg(account_id) OR tr.to_account_id = sqlc.narg(account_id))
+       AND (sqlc.narg(pattern)::text IS NULL OR tr.note ILIKE sqlc.narg(pattern)))
+)::bigint AS total;
+
+-- Los movimientos pedidos por ListEntryKeys, con su cuenta y su categoría.
+-- name: ListTransactionsByIDs :many
 SELECT t.id, t.kind, t.amount, t.occurred_on, t.description,
        a.id AS account_id, a.name AS account_name, a.type AS account_type, a.currency AS account_currency,
        c.id AS category_id, c.name AS category_name, c.kind AS category_kind, c.color AS category_color
 FROM transactions t
 JOIN accounts a ON a.id = t.account_id
 JOIN categories c ON c.id = t.category_id
-WHERE t.user_id = sqlc.arg(user_id) AND t.deleted_at IS NULL
-  AND t.occurred_on BETWEEN sqlc.arg(date_from) AND sqlc.arg(date_to)
-  AND (sqlc.narg(account_id)::uuid IS NULL OR t.account_id = sqlc.narg(account_id))
-  AND (sqlc.narg(pattern)::text IS NULL OR t.description ILIKE sqlc.narg(pattern))
-ORDER BY t.occurred_on DESC, t.created_at DESC, t.id DESC
-LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
-
--- name: CountEntries :one
-SELECT count(*)
-FROM transactions t
-WHERE t.user_id = sqlc.arg(user_id) AND t.deleted_at IS NULL
-  AND t.occurred_on BETWEEN sqlc.arg(date_from) AND sqlc.arg(date_to)
-  AND (sqlc.narg(account_id)::uuid IS NULL OR t.account_id = sqlc.narg(account_id))
-  AND (sqlc.narg(pattern)::text IS NULL OR t.description ILIKE sqlc.narg(pattern));
+WHERE t.user_id = sqlc.arg(user_id) AND t.id = ANY(sqlc.arg(ids)::uuid[]);

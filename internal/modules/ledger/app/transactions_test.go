@@ -56,7 +56,7 @@ func (f *fakeTransactions) Delete(_ context.Context, _ uuid.UUID, id uuid.UUID) 
 	return nil
 }
 
-func (f *fakeTransactions) List(context.Context, uuid.UUID, EntryFilter) ([]domain.Entry, error) {
+func (f *fakeTransactions) List(context.Context, uuid.UUID, EntryFilter) ([]domain.ListEntry, error) {
 	return nil, nil
 }
 

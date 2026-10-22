@@ -14,12 +14,19 @@ import (
 )
 
 const countEntries = `-- name: CountEntries :one
-SELECT count(*)
-FROM transactions t
-WHERE t.user_id = $1 AND t.deleted_at IS NULL
-  AND t.occurred_on BETWEEN $2 AND $3
-  AND ($4::uuid IS NULL OR t.account_id = $4)
-  AND ($5::text IS NULL OR t.description ILIKE $5)
+SELECT (
+    (SELECT count(*) FROM transactions t
+     WHERE t.user_id = $1 AND t.deleted_at IS NULL
+       AND t.occurred_on BETWEEN $2 AND $3
+       AND ($4::uuid IS NULL OR t.account_id = $4)
+       AND ($5::text IS NULL OR t.description ILIKE $5))
+  + (SELECT count(*) FROM transfers tr
+     WHERE tr.user_id = $1 AND tr.deleted_at IS NULL
+       AND tr.occurred_on BETWEEN $2 AND $3
+       AND ($4::uuid IS NULL
+            OR tr.from_account_id = $4 OR tr.to_account_id = $4)
+       AND ($5::text IS NULL OR tr.note ILIKE $5))
+)::bigint AS total
 `
 
 type CountEntriesParams struct {
@@ -38,9 +45,9 @@ func (q *Queries) CountEntries(ctx context.Context, arg CountEntriesParams) (int
 		arg.AccountID,
 		arg.Pattern,
 	)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
+	var total int64
+	err := row.Scan(&total)
+	return total, err
 }
 
 const deleteTransaction = `-- name: DeleteTransaction :execrows
@@ -134,22 +141,29 @@ func (q *Queries) InsertTransaction(ctx context.Context, arg InsertTransactionPa
 	return result.RowsAffected(), nil
 }
 
-const listEntries = `-- name: ListEntries :many
-SELECT t.id, t.kind, t.amount, t.occurred_on, t.description,
-       a.id AS account_id, a.name AS account_name, a.type AS account_type, a.currency AS account_currency,
-       c.id AS category_id, c.name AS category_name, c.kind AS category_kind, c.color AS category_color
-FROM transactions t
-JOIN accounts a ON a.id = t.account_id
-JOIN categories c ON c.id = t.category_id
-WHERE t.user_id = $1 AND t.deleted_at IS NULL
-  AND t.occurred_on BETWEEN $2 AND $3
-  AND ($4::uuid IS NULL OR t.account_id = $4)
-  AND ($5::text IS NULL OR t.description ILIKE $5)
-ORDER BY t.occurred_on DESC, t.created_at DESC, t.id DESC
+const listEntryKeys = `-- name: ListEntryKeys :many
+SELECT e.entry_type::text AS entry_type, e.id::uuid AS id
+FROM (
+    SELECT 'transaction' AS entry_type, t.id, t.occurred_on, t.created_at
+    FROM transactions t
+    WHERE t.user_id = $1 AND t.deleted_at IS NULL
+      AND t.occurred_on BETWEEN $2 AND $3
+      AND ($4::uuid IS NULL OR t.account_id = $4)
+      AND ($5::text IS NULL OR t.description ILIKE $5)
+    UNION ALL
+    SELECT 'transfer' AS entry_type, tr.id, tr.occurred_on, tr.created_at
+    FROM transfers tr
+    WHERE tr.user_id = $1 AND tr.deleted_at IS NULL
+      AND tr.occurred_on BETWEEN $2 AND $3
+      AND ($4::uuid IS NULL
+           OR tr.from_account_id = $4 OR tr.to_account_id = $4)
+      AND ($5::text IS NULL OR tr.note ILIKE $5)
+) e
+ORDER BY e.occurred_on DESC, e.created_at DESC, e.id DESC
 LIMIT $7 OFFSET $6
 `
 
-type ListEntriesParams struct {
+type ListEntryKeysParams struct {
 	UserID     uuid.UUID
 	DateFrom   time.Time
 	DateTo     time.Time
@@ -159,7 +173,60 @@ type ListEntriesParams struct {
 	PageLimit  int32
 }
 
-type ListEntriesRow struct {
+type ListEntryKeysRow struct {
+	EntryType string
+	ID        uuid.UUID
+}
+
+// Una página de la lista: movimientos y transferencias mezclados, del más
+// reciente al más antiguo. Solo trae qué es cada fila; los detalles los leen
+// ListTransactionsByIDs y ListTransfersByIDs. account_id coincide con la cuenta
+// del movimiento o con cualquiera de las dos de la transferencia; pattern (ILIKE,
+// ya escapado) busca en la descripción o en la nota. Los dos son opcionales.
+func (q *Queries) ListEntryKeys(ctx context.Context, arg ListEntryKeysParams) ([]ListEntryKeysRow, error) {
+	rows, err := q.db.Query(ctx, listEntryKeys,
+		arg.UserID,
+		arg.DateFrom,
+		arg.DateTo,
+		arg.AccountID,
+		arg.Pattern,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEntryKeysRow
+	for rows.Next() {
+		var i ListEntryKeysRow
+		if err := rows.Scan(&i.EntryType, &i.ID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTransactionsByIDs = `-- name: ListTransactionsByIDs :many
+SELECT t.id, t.kind, t.amount, t.occurred_on, t.description,
+       a.id AS account_id, a.name AS account_name, a.type AS account_type, a.currency AS account_currency,
+       c.id AS category_id, c.name AS category_name, c.kind AS category_kind, c.color AS category_color
+FROM transactions t
+JOIN accounts a ON a.id = t.account_id
+JOIN categories c ON c.id = t.category_id
+WHERE t.user_id = $1 AND t.id = ANY($2::uuid[])
+`
+
+type ListTransactionsByIDsParams struct {
+	UserID uuid.UUID
+	Ids    []uuid.UUID
+}
+
+type ListTransactionsByIDsRow struct {
 	ID              uuid.UUID
 	Kind            string
 	Amount          decimal.Decimal
@@ -175,25 +242,16 @@ type ListEntriesRow struct {
 	CategoryColor   string
 }
 
-// Los movimientos de un periodo, con su cuenta y su categoría, del más reciente
-// al más antiguo. account_id y pattern (ILIKE, ya escapado) son opcionales.
-func (q *Queries) ListEntries(ctx context.Context, arg ListEntriesParams) ([]ListEntriesRow, error) {
-	rows, err := q.db.Query(ctx, listEntries,
-		arg.UserID,
-		arg.DateFrom,
-		arg.DateTo,
-		arg.AccountID,
-		arg.Pattern,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+// Los movimientos pedidos por ListEntryKeys, con su cuenta y su categoría.
+func (q *Queries) ListTransactionsByIDs(ctx context.Context, arg ListTransactionsByIDsParams) ([]ListTransactionsByIDsRow, error) {
+	rows, err := q.db.Query(ctx, listTransactionsByIDs, arg.UserID, arg.Ids)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListEntriesRow
+	var items []ListTransactionsByIDsRow
 	for rows.Next() {
-		var i ListEntriesRow
+		var i ListTransactionsByIDsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Kind,

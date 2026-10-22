@@ -72,29 +72,72 @@ func (r Transactions) Delete(ctx context.Context, userID, id uuid.UUID) error {
 	return err
 }
 
-// List devuelve una página de la lista.
-func (r Transactions) List(ctx context.Context, userID uuid.UUID, f app.EntryFilter) ([]domain.Entry, error) {
-	rows, err := r.q(ctx).ListEntries(ctx, sqlcgen.ListEntriesParams{
+// List devuelve una página de la lista: primero qué filas y en qué orden (una
+// consulta sobre las dos tablas), luego los detalles de cada tipo.
+func (r Transactions) List(ctx context.Context, userID uuid.UUID, f app.EntryFilter) ([]domain.ListEntry, error) {
+	q := r.q(ctx)
+	keys, err := q.ListEntryKeys(ctx, sqlcgen.ListEntryKeysParams{
 		UserID: userID, DateFrom: f.From.Time(), DateTo: f.To.Time(), AccountID: f.AccountID, Pattern: f.Pattern,
 		PageLimit: int32(f.Limit), PageOffset: int32(f.Offset),
 	})
 	if err != nil {
 		return nil, err
 	}
-	out := make([]domain.Entry, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, domain.Entry{
-			Transaction: domain.Transaction{
-				ID: row.ID, AccountID: row.AccountID, CategoryID: row.CategoryID, Kind: domain.Kind(row.Kind),
-				Amount: row.Amount, OccurredOn: dates.FromTime(row.OccurredOn), Description: row.Description,
-			},
-			Account: domain.EntryAccount{
-				ID: row.AccountID, Name: row.AccountName, Type: domain.AccountType(row.AccountType), Currency: row.AccountCurrency,
-			},
-			Category: domain.Category{
-				ID: row.CategoryID, Name: row.CategoryName, Kind: domain.Kind(row.CategoryKind), Color: row.CategoryColor,
-			},
-		})
+	var movementIDs, transferIDs []uuid.UUID
+	for _, k := range keys {
+		if k.EntryType == entryTransfer {
+			transferIDs = append(transferIDs, k.ID)
+		} else {
+			movementIDs = append(movementIDs, k.ID)
+		}
+	}
+	movements := map[uuid.UUID]*domain.Entry{}
+	if len(movementIDs) > 0 {
+		rows, err := q.ListTransactionsByIDs(ctx, sqlcgen.ListTransactionsByIDsParams{UserID: userID, Ids: movementIDs})
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			movements[row.ID] = &domain.Entry{
+				Transaction: domain.Transaction{
+					ID: row.ID, AccountID: row.AccountID, CategoryID: row.CategoryID, Kind: domain.Kind(row.Kind),
+					Amount: row.Amount, OccurredOn: dates.FromTime(row.OccurredOn), Description: row.Description,
+				},
+				Account: domain.EntryAccount{
+					ID: row.AccountID, Name: row.AccountName, Type: domain.AccountType(row.AccountType), Currency: row.AccountCurrency,
+				},
+				Category: domain.Category{
+					ID: row.CategoryID, Name: row.CategoryName, Kind: domain.Kind(row.CategoryKind), Color: row.CategoryColor,
+				},
+			}
+		}
+	}
+	transfers := map[uuid.UUID]*domain.TransferEntry{}
+	if len(transferIDs) > 0 {
+		rows, err := q.ListTransfersByIDs(ctx, sqlcgen.ListTransfersByIDsParams{UserID: userID, Ids: transferIDs})
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			transfers[row.ID] = &domain.TransferEntry{
+				Transfer: domain.Transfer{
+					ID: row.ID, FromAccountID: row.FromID, ToAccountID: row.ToID, FromAmount: row.FromAmount,
+					ToAmount: row.ToAmount, ExchangeRate: rateOf(row.ExchangeRate),
+					OccurredOn: dates.FromTime(row.OccurredOn), Note: row.Note,
+				},
+				From: domain.EntryAccount{ID: row.FromID, Name: row.FromName, Type: domain.AccountType(row.FromType), Currency: row.FromCurrency},
+				To:   domain.EntryAccount{ID: row.ToID, Name: row.ToName, Type: domain.AccountType(row.ToType), Currency: row.ToCurrency},
+			}
+		}
+	}
+	out := make([]domain.ListEntry, 0, len(keys))
+	for _, k := range keys {
+		switch {
+		case movements[k.ID] != nil:
+			out = append(out, domain.ListEntry{Movement: movements[k.ID]})
+		case transfers[k.ID] != nil:
+			out = append(out, domain.ListEntry{Transfer: transfers[k.ID]})
+		}
 	}
 	return out, nil
 }
