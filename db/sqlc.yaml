@@ -53,3 +53,14 @@ sql:
         out: ../internal/modules/profile/adapters/postgres/sqlcgen
         sql_package: pgx/v5
         emit_pointers_for_null_types: true
+  - engine: postgresql
+    schema:
+      - migrations/00003_ledger_create_categories.sql
+    queries:
+      - ../internal/modules/ledger/adapters/postgres/categories.sql
+    gen:
+      go:
+        package: sqlcgen
+        out: ../internal/modules/ledger/adapters/postgres/sqlcgen
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
