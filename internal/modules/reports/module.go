@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/ledger"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/profile"
@@ -63,4 +64,34 @@ func (p profileSource) MainCurrency(ctx context.Context, userID uuid.UUID) (stri
 
 func (p profileSource) Today(ctx context.Context, userID uuid.UUID) (dates.LocalDate, error) {
 	return p.profiles.Today(ctx, userID)
+}
+
+// CurrencyTotals son los ingresos y gastos de un periodo en una moneda.
+type CurrencyTotals struct {
+	Currency string
+	Income   decimal.Decimal
+	Expense  decimal.Decimal
+}
+
+// Reader es lo que Inicio (plan 08) pide de los reportes: los mismos totales que
+// GET /reports/summary, por moneda y con la principal primero.
+type Reader interface {
+	Totals(ctx context.Context, userID uuid.UUID, from, to dates.LocalDate) ([]CurrencyTotals, error)
+}
+
+// Reader da los totales de un periodo.
+func (m *Module) Reader() Reader { return reader{m.service} }
+
+type reader struct{ service *app.Service }
+
+func (r reader) Totals(ctx context.Context, userID uuid.UUID, from, to dates.LocalDate) ([]CurrencyTotals, error) {
+	summary, err := r.service.Summary(ctx, userID, from.String(), to.String())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]CurrencyTotals, 0, len(summary.Currencies))
+	for _, c := range summary.Currencies {
+		out = append(out, CurrencyTotals{Currency: c.Currency, Income: c.IncomeTotal, Expense: c.ExpenseTotal})
+	}
+	return out, nil
 }

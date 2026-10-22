@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/credit"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/home"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/ledger"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/profile"
@@ -30,7 +31,7 @@ import (
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/tx"
 )
 
-// Integración: identity + profile + ledger + reports + credit por HTTP contra el Postgres local,
+// Integración: identity + profile + ledger + reports + credit + home por HTTP contra el Postgres local,
 // cableados como en cmd/api/main.go.
 
 type harness struct {
@@ -64,6 +65,7 @@ func newHarnessAt(t *testing.T, c clock.Clock) *harness {
 	ledgerModule := ledger.New(runner, c, profileModule.Reader())
 	reportsModule := reports.New(ledgerModule.ReportQuery(), profileModule.Reader())
 	creditModule := credit.New(runner, c, ledgerModule.CategoryReader(), profileModule.Reader())
+	homeModule := home.New(profileModule.Reader(), ledgerModule.HomeReader(), reportsModule.Reader(), creditModule.CreditSummary())
 	identityModule.OnUserRegistered(func(ctx context.Context, u identity.NewUser) error {
 		if err := profileModule.OnUserRegistered(ctx, u.ID, u.MainCurrency, u.Timezone); err != nil {
 			return err
@@ -76,6 +78,7 @@ func newHarnessAt(t *testing.T, c clock.Clock) *harness {
 	ledgerModule.Routes(protected)
 	reportsModule.Routes(protected)
 	creditModule.Routes(protected)
+	homeModule.Routes(protected)
 	return &harness{router: router, pool: pool}
 }
 

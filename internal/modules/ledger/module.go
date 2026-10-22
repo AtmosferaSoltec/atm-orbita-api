@@ -25,6 +25,7 @@ import (
 type Module struct {
 	categories          *app.CategoryService
 	accounts            *app.AccountService
+	transactions        *app.TransactionService
 	categoriesHandler   *ledgerhttp.Categories
 	accountsHandler     *ledgerhttp.Accounts
 	transactionsHandler *ledgerhttp.Transactions
@@ -49,6 +50,7 @@ func New(runner tx.Runner, c clock.Clock, profiles profile.Reader) *Module {
 		categoriesHandler:   ledgerhttp.NewCategories(categories),
 		accountsHandler:     ledgerhttp.NewAccounts(accounts),
 		transactionsHandler: ledgerhttp.NewTransactions(transactions),
+		transactions:        transactions,
 		transactionRepo:     transactionRepo,
 		categoryRepo:        categoryRepo,
 		transfersHandler:    ledgerhttp.NewTransfers(transfers),
@@ -71,6 +73,36 @@ func (m *Module) OnUserRegistered(ctx context.Context, userID uuid.UUID, mainCur
 		return err
 	}
 	return m.accounts.CreateInitial(ctx, userID, mainCurrency)
+}
+
+// HomeReader es lo que Inicio (plan 08) pide al libro, ya con la forma JSON de
+// GET /accounts y GET /entries: así las cifras son exactamente las mismas.
+type HomeReader interface {
+	// Savings es el ahorro total (savings de GET /accounts).
+	Savings(ctx context.Context, userID uuid.UUID) (any, error)
+	// RecentEntries son las limit filas más recientes de la lista (como en GET /entries).
+	RecentEntries(ctx context.Context, userID uuid.UUID, limit int) ([]any, error)
+}
+
+// HomeReader da el ahorro y los últimos movimientos para Inicio.
+func (m *Module) HomeReader() HomeReader { return homeReader{m} }
+
+type homeReader struct{ m *Module }
+
+func (r homeReader) Savings(ctx context.Context, userID uuid.UUID) (any, error) {
+	list, err := r.m.accounts.List(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return ledgerhttp.SavingsResponse(list.Savings), nil
+}
+
+func (r homeReader) RecentEntries(ctx context.Context, userID uuid.UUID, limit int) ([]any, error) {
+	entries, err := r.m.transactions.RecentEntries(ctx, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	return ledgerhttp.EntryResponses(entries), nil
 }
 
 // ErrNotFound: lo pedido no existe o es de otro usuario.

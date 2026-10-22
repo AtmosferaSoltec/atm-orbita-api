@@ -88,17 +88,10 @@ func (h *Accounts) list(c *gin.Context) {
 	}
 	out := accountListResponse{
 		Accounts: make([]accountResponse, 0, len(list.Accounts)),
-		Savings: savingsResponse{
-			IncludedCount: list.Savings.IncludedCount,
-			ActiveCount:   list.Savings.ActiveCount,
-			Totals:        make([]currencyAmountResponse, 0, len(list.Savings.Totals)),
-		},
+		Savings:  toSavingsResponse(list.Savings),
 	}
 	for _, a := range list.Accounts {
 		out.Accounts = append(out.Accounts, toAccountResponse(a))
-	}
-	for _, t := range list.Savings.Totals {
-		out.Savings.Totals = append(out.Savings.Totals, currencyAmountResponse{Currency: t.Currency, Amount: money.NewAmount(t.Amount)})
 	}
 	apierror.OK(c, out)
 }
@@ -182,4 +175,19 @@ func toAccountResponse(a domain.Account) accountResponse {
 		ID: a.ID, Name: a.Name, Type: string(a.Type), Currency: a.Currency,
 		Balance: money.NewAmount(a.Balance), IncludeInSavings: a.IncludeInSavings,
 	}
+}
+
+// SavingsResponse es el ahorro total con la forma de GET /accounts (para Inicio).
+func SavingsResponse(s domain.Savings) any { return toSavingsResponse(s) }
+
+func toSavingsResponse(s domain.Savings) savingsResponse {
+	out := savingsResponse{
+		IncludedCount: s.IncludedCount,
+		ActiveCount:   s.ActiveCount,
+		Totals:        make([]currencyAmountResponse, 0, len(s.Totals)),
+	}
+	for _, t := range s.Totals {
+		out.Totals = append(out.Totals, currencyAmountResponse{Currency: t.Currency, Amount: money.NewAmount(t.Amount)})
+	}
+	return out
 }

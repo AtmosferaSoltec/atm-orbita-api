@@ -179,15 +179,7 @@ func (h *Transactions) list(c *gin.Context) {
 		respondError(c, err)
 		return
 	}
-	items := make([]any, 0, len(page.Items))
-	for _, e := range page.Items {
-		if e.Transfer != nil {
-			items = append(items, toTransferResponse(*e.Transfer))
-		} else {
-			items = append(items, toEntryResponse(*e.Movement))
-		}
-	}
-	apierror.Page(c, items, apierror.Meta{Page: page.Page, PageSize: page.PageSize, Total: page.Total})
+	apierror.Page(c, EntryResponses(page.Items), apierror.Meta{Page: page.Page, PageSize: page.PageSize, Total: page.Total})
 }
 
 // idField es un UUID opcional del cuerpo, con el nombre de su campo.
@@ -233,4 +225,17 @@ func toEntryResponse(e domain.Entry) entryResponse {
 		},
 		Category: toResponse(e.Category),
 	}
+}
+
+// EntryResponses son filas de la lista con la forma de GET /entries (para Inicio).
+func EntryResponses(entries []domain.ListEntry) []any {
+	items := make([]any, 0, len(entries))
+	for _, e := range entries {
+		if e.Transfer != nil {
+			items = append(items, toTransferResponse(*e.Transfer))
+		} else {
+			items = append(items, toEntryResponse(*e.Movement))
+		}
+	}
+	return items
 }

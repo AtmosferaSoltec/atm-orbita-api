@@ -11,6 +11,7 @@ Ninguna. Las sumas las hace `ledger` en la base (`ledger.ReportQuery`, una consu
 | Qué | Para quién |
 |---|---|
 | `New(ledger.ReportQuery, profile.Reader)`, `Routes(protected)` | `cmd/api/main.go` |
+| `Reader()`: `Totals(ctx, userID, from, to)` por moneda | El módulo `home` (plan 08), para los totales del mes |
 
 ## Reglas
 

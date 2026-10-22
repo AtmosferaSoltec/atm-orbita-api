@@ -287,3 +287,14 @@ func entryOf(t domain.Transaction, a domain.Account, c domain.Category) domain.E
 		Category:    c,
 	}
 }
+
+// RecentEntries son los limit movimientos y transferencias más recientes de los
+// últimos 10 años (el periodo más largo de la lista), para Inicio.
+func (s *TransactionService) RecentEntries(ctx context.Context, userID uuid.UUID, limit int) ([]domain.ListEntry, error) {
+	today, err := s.profile.Today(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	from := dates.FromTime(today.Time().AddDate(-domain.MaxRangeYears, 0, 1))
+	return s.transactions.List(ctx, userID, EntryFilter{From: from, To: today, Limit: limit})
+}

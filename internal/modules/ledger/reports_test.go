@@ -29,11 +29,12 @@ func (h *harness) seedSample(t *testing.T, token string) map[string]string {
 			"description": m.text, "occurred_on": m.date,
 		})
 	}
-	post("/transactions", map[string]any{"account_id": ids["Débito principal"], "category_id": ids["Sueldo"], "amount": "3500.00", "description": "Sueldo", "occurred_on": "2026-10-01"})
+	// Como en SampleData.kt: el sueldo del 1 oct se registró después del cambio de dólares.
 	post("/transfers", map[string]any{
 		"from_account_id": ids["Cuenta Dólares"], "to_account_id": ids["Débito principal"], "from_amount": "20.00",
 		"to_amount": "64.00", "exchange_rate": "3.20", "occurred_on": "2026-10-01", "note": "Cambio de dólares",
 	})
+	post("/transactions", map[string]any{"account_id": ids["Débito principal"], "category_id": ids["Sueldo"], "amount": "3500.00", "description": "Sueldo", "occurred_on": "2026-10-01"})
 	post("/transactions", map[string]any{"account_id": ids["Débito principal"], "category_id": ids["Transporte"], "amount": "12.00", "description": "Taxi al trabajo", "occurred_on": "2026-10-02"})
 	post("/transactions", map[string]any{"account_id": ids["Efectivo"], "category_id": ids["Alimentación"], "amount": "18.50", "description": "Almuerzo", "occurred_on": "2026-10-02"})
 	return ids
