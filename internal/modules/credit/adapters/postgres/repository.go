@@ -161,3 +161,46 @@ func (r Purchases) Delete(ctx context.Context, userID, id uuid.UUID) error {
 	}
 	return err
 }
+
+// Lock busca una compra del usuario y la bloquea hasta el fin de la transacción.
+func (r Purchases) Lock(ctx context.Context, userID, id uuid.UUID) (app.StoredPurchase, error) {
+	row, err := r.q(ctx).LockPurchase(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && row.UserID != userID) {
+		return app.StoredPurchase{}, domain.ErrNotFound
+	}
+	if err != nil {
+		return app.StoredPurchase{}, err
+	}
+	return app.StoredPurchase{
+		Purchase: domain.Purchase{
+			ID: row.ID, CardID: row.CardID, CategoryID: row.CategoryID, Description: row.Description,
+			Amount: row.Amount, Currency: row.Currency,
+			PurchaseDate: dates.FromTime(row.PurchaseDate), DueDate: dates.FromTime(row.DueDate),
+		},
+		Status:  row.Status,
+		Deleted: row.DeletedAt != nil,
+	}, nil
+}
+
+// MarkPaid marca pagada una compra pendiente con el egreso de su pago.
+func (r Purchases) MarkPaid(ctx context.Context, userID, id, transactionID uuid.UUID) error {
+	n, err := r.q(ctx).MarkPurchasePaid(ctx, sqlcgen.MarkPurchasePaidParams{ID: id, UserID: userID, PaymentTransactionID: &transactionID})
+	if err == nil && n == 0 {
+		return domain.ErrPurchaseAlreadyPaid
+	}
+	return err
+}
+
+// Revert vuelve a pendiente una compra pagada; ok es false si no estaba pagada.
+func (r Purchases) Revert(ctx context.Context, userID, id uuid.UUID) (cardID uuid.UUID, ok bool, err error) {
+	cardID, err = r.q(ctx).RevertPurchasePayment(ctx, sqlcgen.RevertPurchasePaymentParams{ID: id, UserID: userID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.UUID{}, false, nil
+	}
+	return cardID, err == nil, err
+}
+
+// Unarchive vuelve a mostrar una tarjeta archivada.
+func (r Cards) Unarchive(ctx context.Context, userID, id uuid.UUID) error {
+	return r.q(ctx).UnarchiveCard(ctx, sqlcgen.UnarchiveCardParams{ID: id, UserID: userID})
+}

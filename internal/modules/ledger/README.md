@@ -8,6 +8,7 @@ El libro del usuario: sus **categorías**, sus **cuentas**, sus **movimientos** 
 - `accounts`, migración `00004`. Guarda el saldo **inicial**; el saldo se calcula en `ListAccounts` (una sola consulta para todas las cuentas: saldo inicial + ingresos − egresos + transferencias que entran − transferencias que salen).
 - `transactions`, migración `00005`. Claves foráneas compuestas `(account_id, user_id)` y `(category_id, user_id, kind)`: la base rechaza un movimiento que apunte a la cuenta o categoría de otra persona, o a una categoría de otro tipo. Borrado lógico (`deleted_at`).
 - `transfers`, migración `00006`. Las dos cuentas con claves foráneas compuestas, nunca la misma; borrado lógico.
+- La migración `00008` agrega a `transactions` el origen (`source`: `manual` o `credit_payment`) y la compra que pagó (`source_id`), con un índice único: una compra tiene a lo sumo un egreso de pago vivo.
 
 Las migraciones `00003` y `00004` dan lo inicial (las 9 categorías y "Efectivo") a los usuarios que ya existían.
 
@@ -19,6 +20,7 @@ Las migraciones `00003` y `00004` dan lo inicial (las 9 categorías y "Efectivo"
 | `OnUserRegistered(ctx, userID, mainCurrency)` | El gancho de alta de `identity` (lo cablea `main.go`, después del perfil): crea las 9 categorías y "Efectivo" en la misma transacción |
 | `CategoryReader()`: `Categories(ctx, userID, ids)`, también las archivadas | El módulo `credit` (plan 09), para validar y mostrar la categoría de una compra |
 | `HomeReader()`: `Savings`, `RecentEntries(limit)`, con la forma JSON de `GET /accounts` y `GET /entries` | El módulo `home` (plan 08) |
+| `PaymentLedger()`: `CreatePaymentExpense` (en la transacción en curso); `OnPaymentDeleted(PaymentReverter)`; `ErrNotFound`, `ErrAccountArchived` | El módulo `credit` (plan 10): pagar una compra crea su egreso, y eliminar ese egreso la devuelve a pendiente |
 | `ReportQuery()`: `TotalsByCategory(ctx, userID, from, to)` | El módulo `reports` (plan 07): sumas de los movimientos por moneda de la cuenta, tipo y categoría, hechas en la base |
 
 ## Reglas
@@ -43,6 +45,11 @@ Las migraciones `00003` y `00004` dan lo inicial (las 9 categorías y "Efectivo"
 - Eliminar es lógico y deja de contar en saldos y listas. Eliminar dos veces no es un error.
 - La lista (`GET /entries`): `occurred_on DESC`, luego `created_at DESC`; `q` busca en la descripción sin distinguir mayúsculas (escapa `%`, `_` y `\`); `account_id` filtra; páginas de hasta 100; periodo de hasta 10 años.
 
+**Egreso del pago de una compra** (plan 10)
+- Lo crea `credit` al pagar, con la categoría y la descripción de la compra; trae `credit_purchase_id`.
+- Solo cambian su cuenta, su monto y su fecha; la categoría o la descripción → `422 PAYMENT_EXPENSE_LOCKED`.
+- Eliminarlo devuelve la compra a pendiente (y desarchiva su tarjeta) en la misma transacción.
+
 **Transferencias**
 - No son ingreso ni gasto. Lo que mueve los saldos son los dos montos; el tipo de cambio es informativo y el API no lo recalcula.
 - Misma moneda: sin tipo de cambio y con montos iguales. Monedas distintas: tipo de cambio obligatorio y mayor que cero.
@@ -66,6 +73,7 @@ Las migraciones `00003` y `00004` dan lo inicial (las 9 categorías y "Efectivo"
 | `VALIDATION_FAILED` + `AMOUNT_REQUIRED`, `ACCOUNT_REQUIRED`, `CATEGORY_REQUIRED`, `DESCRIPTION_TOO_LONG`, `FUTURE_DATE` (o `INVALID_FORMAT`) | 400 | Movimiento, en ese orden |
 | `VALIDATION_FAILED` + `INVALID_FORMAT` / `RANGE_INVALID` | 400 | `GET /entries` con fechas, página o `account_id` mal formados, o un periodo invertido o de 10 años o más |
 | `VALIDATION_FAILED` + `ACCOUNT_REQUIRED`, `SAME_ACCOUNT`, `AMOUNT_REQUIRED`, `RATE_REQUIRED` / `AMOUNTS_MUST_MATCH`, `DESCRIPTION_TOO_LONG`, `FUTURE_DATE` | 400 | Transferencia, en ese orden |
+| `PAYMENT_EXPENSE_LOCKED` | 422 | Cambiar la categoría o la descripción del egreso de un pago |
 | `ACCOUNT_ARCHIVED` / `CATEGORY_ARCHIVED` | 422 | Movimiento o transferencia con una cuenta (o categoría) archivada |
 | `CATEGORY_NAME_TAKEN` (details: `name` / `NAME_TAKEN`) | 409 | Nombre de categoría repetido en ese tipo |
 | `FX_RATE_NOT_CONFIGURED` | 422 | Cuenta en otra moneda sin tipo de cambio |

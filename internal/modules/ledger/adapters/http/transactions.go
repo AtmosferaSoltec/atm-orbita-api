@@ -223,7 +223,8 @@ func toEntryResponse(e domain.Entry) entryResponse {
 		Account: entryAccountResponse{
 			ID: e.Account.ID, Name: e.Account.Name, Type: string(e.Account.Type), Currency: e.Account.Currency,
 		},
-		Category: toResponse(e.Category),
+		Category:         toResponse(e.Category),
+		CreditPurchaseID: e.CreditPurchaseID,
 	}
 }
 
@@ -239,3 +240,6 @@ func EntryResponses(entries []domain.ListEntry) []any {
 	}
 	return items
 }
+
+var errPaymentExpenseLocked = apierror.New(http.StatusUnprocessableEntity, "PAYMENT_EXPENSE_LOCKED",
+	"Este egreso es el pago de una compra con tarjeta: solo puedes cambiar la cuenta, el monto y la fecha.")

@@ -196,6 +196,8 @@ func respondError(c *gin.Context, err error) {
 		apierror.Respond(c, errAccountArchived)
 	case errors.Is(err, domain.ErrCategoryArchived):
 		apierror.Respond(c, errCategoryArchived)
+	case errors.Is(err, domain.ErrPaymentExpenseLocked):
+		apierror.Respond(c, errPaymentExpenseLocked)
 	default:
 		apierror.Respond(c, err)
 	}

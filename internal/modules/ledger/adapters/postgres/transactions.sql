@@ -1,11 +1,12 @@
 -- Un id que ya existe no se pisa: el caso de uso decide si es un reintento.
 -- name: InsertTransaction :execrows
-INSERT INTO transactions (id, user_id, account_id, category_id, kind, amount, occurred_on, description, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
+INSERT INTO transactions (id, user_id, account_id, category_id, kind, amount, occurred_on, description,
+                          created_at, updated_at, source, source_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10, $11)
 ON CONFLICT (id) DO NOTHING;
 
 -- name: GetTransaction :one
-SELECT id, user_id, account_id, category_id, kind, amount, occurred_on, description, deleted_at
+SELECT id, user_id, account_id, category_id, kind, amount, occurred_on, description, source_id, deleted_at
 FROM transactions
 WHERE id = $1;
 
@@ -63,7 +64,7 @@ SELECT (
 
 -- Los movimientos pedidos por ListEntryKeys, con su cuenta y su categoría.
 -- name: ListTransactionsByIDs :many
-SELECT t.id, t.kind, t.amount, t.occurred_on, t.description,
+SELECT t.id, t.kind, t.amount, t.occurred_on, t.description, t.source_id,
        a.id AS account_id, a.name AS account_name, a.type AS account_type, a.currency AS account_currency,
        c.id AS category_id, c.name AS category_name, c.kind AS category_kind, c.color AS category_color
 FROM transactions t

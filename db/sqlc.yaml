@@ -62,6 +62,7 @@ sql:
       - migrations/00004_ledger_create_accounts.sql
       - migrations/00005_ledger_create_transactions.sql
       - migrations/00006_ledger_create_transfers.sql
+      - migrations/00008_ledger_add_transaction_source.sql
     queries:
       - ../internal/modules/ledger/adapters/postgres/categories.sql
       - ../internal/modules/ledger/adapters/postgres/accounts.sql
@@ -76,6 +77,7 @@ sql:
   - engine: postgresql
     schema:
       - migrations/00007_credit_create_cards_and_purchases.sql
+      - migrations/00009_credit_add_purchase_payment.sql
     queries:
       - ../internal/modules/credit/adapters/postgres/queries.sql
     gen:

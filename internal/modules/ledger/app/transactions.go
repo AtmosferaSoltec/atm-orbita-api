@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/ledger/domain"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/clock"
@@ -42,19 +43,35 @@ type Transactions interface {
 	Count(ctx context.Context, userID uuid.UUID, f EntryFilter) (int64, error)
 }
 
+// Transactor corre varias escrituras juntas o ninguna (tx.Runner).
+type Transactor interface {
+	InTx(ctx context.Context, fn func(ctx context.Context) error) error
+}
+
+// PaymentReverter vuelve a pendiente la compra pagada con un egreso que se
+// elimina (lo implementa credit; lo cablea main). Corre en la misma transacción.
+type PaymentReverter interface {
+	RevertPayment(ctx context.Context, userID, purchaseID uuid.UUID) error
+}
+
 // TransactionService son los casos de uso de movimientos y de la lista.
 type TransactionService struct {
 	transactions Transactions
 	accounts     Accounts
 	categories   Categories
 	profile      Profile
+	tx           Transactor
+	reverter     PaymentReverter
 	clock        clock.Clock
 }
 
 // NewTransactionService crea el servicio.
-func NewTransactionService(transactions Transactions, accounts Accounts, categories Categories, profile Profile, c clock.Clock) *TransactionService {
-	return &TransactionService{transactions: transactions, accounts: accounts, categories: categories, profile: profile, clock: c}
+func NewTransactionService(transactions Transactions, accounts Accounts, categories Categories, profile Profile, tx Transactor, c clock.Clock) *TransactionService {
+	return &TransactionService{transactions: transactions, accounts: accounts, categories: categories, profile: profile, tx: tx, clock: c}
 }
+
+// OnPaymentDeleted registra quién vuelve a pendiente la compra de un egreso de pago eliminado.
+func (s *TransactionService) OnPaymentDeleted(reverter PaymentReverter) { s.reverter = reverter }
 
 // CreateTransactionInput es Nuevo movimiento. Android no manda la fecha al
 // crear: el API usa hoy en la zona del perfil.
@@ -168,6 +185,12 @@ func (s *TransactionService) Update(ctx context.Context, userID, id uuid.UUID, i
 	if err := problems.OrNil(); err != nil {
 		return domain.Entry{}, err
 	}
+	// El egreso de un pago conserva la categoría y la descripción de su compra:
+	// solo cambian la cuenta, el monto y la fecha.
+	if current.CreditPurchaseID != nil &&
+		(next.Description != current.Description || (in.CategoryID != nil && *in.CategoryID != current.CategoryID)) {
+		return domain.Entry{}, domain.ErrPaymentExpenseLocked
+	}
 
 	var account StoredAccount
 	if in.AccountID != nil && *in.AccountID != current.AccountID {
@@ -207,7 +230,16 @@ func (s *TransactionService) Delete(ctx context.Context, userID, id uuid.UUID) e
 	if current.Deleted {
 		return nil
 	}
-	return s.transactions.Delete(ctx, userID, id)
+	if current.CreditPurchaseID == nil || s.reverter == nil {
+		return s.transactions.Delete(ctx, userID, id)
+	}
+	// Eliminar el egreso de un pago devuelve su compra a pendiente, todo junto.
+	return s.tx.InTx(ctx, func(ctx context.Context) error {
+		if err := s.transactions.Delete(ctx, userID, id); err != nil {
+			return err
+		}
+		return s.reverter.RevertPayment(ctx, userID, *current.CreditPurchaseID)
+	})
 }
 
 // EntryQuery es la consulta de GET /entries.
@@ -297,4 +329,37 @@ func (s *TransactionService) RecentEntries(ctx context.Context, userID uuid.UUID
 	}
 	from := dates.FromTime(today.Time().AddDate(-domain.MaxRangeYears, 0, 1))
 	return s.transactions.List(ctx, userID, EntryFilter{From: from, To: today, Limit: limit})
+}
+
+// PaymentExpense es el egreso que crea el pago de una compra con tarjeta.
+type PaymentExpense struct {
+	PurchaseID  uuid.UUID
+	AccountID   uuid.UUID
+	CategoryID  uuid.UUID
+	Description string
+	Amount      decimal.Decimal
+	OccurredOn  dates.LocalDate
+}
+
+// CreatePaymentExpense crea el egreso del pago de una compra, en la transacción
+// en curso (la abre credit). La cuenta tiene que estar activa; la categoría es la
+// de la compra aunque se haya archivado después: el pago es de esa compra.
+func (s *TransactionService) CreatePaymentExpense(ctx context.Context, userID uuid.UUID, in PaymentExpense) (domain.Entry, error) {
+	account, err := usableAccount(ctx, s.accounts, userID, in.AccountID)
+	if err != nil {
+		return domain.Entry{}, err
+	}
+	category, err := s.categories.Get(ctx, userID, in.CategoryID)
+	if err != nil {
+		return domain.Entry{}, err
+	}
+	purchase := in.PurchaseID
+	t := domain.Transaction{
+		ID: ids.New(), AccountID: account.ID, CategoryID: category.ID, Kind: category.Kind,
+		Amount: in.Amount, OccurredOn: in.OccurredOn, Description: in.Description, CreditPurchaseID: &purchase,
+	}
+	if _, err := s.transactions.Insert(ctx, userID, t, s.clock.Now()); err != nil {
+		return domain.Entry{}, err
+	}
+	return entryOf(t, account.Account, category.Category), nil
 }

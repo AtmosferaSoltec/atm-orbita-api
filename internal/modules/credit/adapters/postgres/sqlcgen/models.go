@@ -22,17 +22,19 @@ type CreditCard struct {
 }
 
 type CreditPurchase struct {
-	ID           uuid.UUID
-	UserID       uuid.UUID
-	CardID       uuid.UUID
-	CategoryID   uuid.UUID
-	Description  string
-	Amount       decimal.Decimal
-	Currency     string
-	PurchaseDate time.Time
-	DueDate      time.Time
-	Status       string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	DeletedAt    *time.Time
+	ID                   uuid.UUID
+	UserID               uuid.UUID
+	CardID               uuid.UUID
+	CategoryID           uuid.UUID
+	Description          string
+	Amount               decimal.Decimal
+	Currency             string
+	PurchaseDate         time.Time
+	DueDate              time.Time
+	Status               string
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	DeletedAt            *time.Time
+	PaidAt               *time.Time
+	PaymentTransactionID *uuid.UUID
 }

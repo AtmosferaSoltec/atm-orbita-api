@@ -70,7 +70,7 @@ func (q *Queries) DeleteTransaction(ctx context.Context, arg DeleteTransactionPa
 }
 
 const getTransaction = `-- name: GetTransaction :one
-SELECT id, user_id, account_id, category_id, kind, amount, occurred_on, description, deleted_at
+SELECT id, user_id, account_id, category_id, kind, amount, occurred_on, description, source_id, deleted_at
 FROM transactions
 WHERE id = $1
 `
@@ -84,6 +84,7 @@ type GetTransactionRow struct {
 	Amount      decimal.Decimal
 	OccurredOn  time.Time
 	Description string
+	SourceID    *uuid.UUID
 	DeletedAt   *time.Time
 }
 
@@ -99,14 +100,16 @@ func (q *Queries) GetTransaction(ctx context.Context, id uuid.UUID) (GetTransact
 		&i.Amount,
 		&i.OccurredOn,
 		&i.Description,
+		&i.SourceID,
 		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const insertTransaction = `-- name: InsertTransaction :execrows
-INSERT INTO transactions (id, user_id, account_id, category_id, kind, amount, occurred_on, description, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
+INSERT INTO transactions (id, user_id, account_id, category_id, kind, amount, occurred_on, description,
+                          created_at, updated_at, source, source_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10, $11)
 ON CONFLICT (id) DO NOTHING
 `
 
@@ -120,6 +123,8 @@ type InsertTransactionParams struct {
 	OccurredOn  time.Time
 	Description string
 	CreatedAt   time.Time
+	Source      string
+	SourceID    *uuid.UUID
 }
 
 // Un id que ya existe no se pisa: el caso de uso decide si es un reintento.
@@ -134,6 +139,8 @@ func (q *Queries) InsertTransaction(ctx context.Context, arg InsertTransactionPa
 		arg.OccurredOn,
 		arg.Description,
 		arg.CreatedAt,
+		arg.Source,
+		arg.SourceID,
 	)
 	if err != nil {
 		return 0, err
@@ -212,7 +219,7 @@ func (q *Queries) ListEntryKeys(ctx context.Context, arg ListEntryKeysParams) ([
 }
 
 const listTransactionsByIDs = `-- name: ListTransactionsByIDs :many
-SELECT t.id, t.kind, t.amount, t.occurred_on, t.description,
+SELECT t.id, t.kind, t.amount, t.occurred_on, t.description, t.source_id,
        a.id AS account_id, a.name AS account_name, a.type AS account_type, a.currency AS account_currency,
        c.id AS category_id, c.name AS category_name, c.kind AS category_kind, c.color AS category_color
 FROM transactions t
@@ -232,6 +239,7 @@ type ListTransactionsByIDsRow struct {
 	Amount          decimal.Decimal
 	OccurredOn      time.Time
 	Description     string
+	SourceID        *uuid.UUID
 	AccountID       uuid.UUID
 	AccountName     string
 	AccountType     string
@@ -258,6 +266,7 @@ func (q *Queries) ListTransactionsByIDs(ctx context.Context, arg ListTransaction
 			&i.Amount,
 			&i.OccurredOn,
 			&i.Description,
+			&i.SourceID,
 			&i.AccountID,
 			&i.AccountName,
 			&i.AccountType,

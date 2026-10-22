@@ -62,3 +62,29 @@ WHERE id = $1 AND user_id = $2 AND status = 'pending' AND deleted_at IS NULL;
 UPDATE credit_purchases
 SET deleted_at = now(), updated_at = now()
 WHERE id = $1 AND user_id = $2 AND status = 'pending' AND deleted_at IS NULL;
+
+-- name: LockPurchase :one
+-- Bloquea la compra hasta el fin de la transacción: de dos pagos simultáneos,
+-- el segundo espera y la encuentra ya pagada.
+SELECT id, user_id, card_id, category_id, description, amount, currency, purchase_date,
+       due_date, status, deleted_at
+FROM credit_purchases
+WHERE id = $1
+FOR UPDATE;
+
+-- name: MarkPurchasePaid :execrows
+UPDATE credit_purchases
+SET status = 'paid', paid_at = now(), payment_transaction_id = $3, updated_at = now()
+WHERE id = $1 AND user_id = $2 AND status = 'pending' AND deleted_at IS NULL;
+
+-- name: RevertPurchasePayment :one
+-- La compra vuelve a pendiente; devuelve su tarjeta para mostrarla de nuevo.
+UPDATE credit_purchases
+SET status = 'pending', paid_at = NULL, payment_transaction_id = NULL, updated_at = now()
+WHERE id = $1 AND user_id = $2 AND status = 'paid'
+RETURNING card_id;
+
+-- name: UnarchiveCard :exec
+UPDATE credit_cards
+SET archived_at = NULL, updated_at = now()
+WHERE id = $1 AND user_id = $2 AND archived_at IS NOT NULL;

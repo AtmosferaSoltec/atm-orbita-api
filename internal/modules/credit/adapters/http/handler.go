@@ -28,6 +28,7 @@ type Service interface {
 	CreatePurchase(ctx context.Context, userID uuid.UUID, id *uuid.UUID, in app.PurchaseInput) (app.PurchaseView, bool, error)
 	UpdatePurchase(ctx context.Context, userID, id uuid.UUID, in app.PurchaseInput) (app.PurchaseView, error)
 	DeletePurchase(ctx context.Context, userID, id uuid.UUID) error
+	Pay(ctx context.Context, userID, id uuid.UUID, in app.PayInput) (app.Payment, error)
 }
 
 var (
@@ -41,6 +42,8 @@ var (
 		"Esta tarjeta tiene compras pendientes. Págalas o elimínalas antes de archivarla.")
 	errPurchaseAlreadyPaid = apierror.New(http.StatusConflict, "PURCHASE_ALREADY_PAID",
 		"Esta compra ya está pagada.")
+	errAccountArchived = apierror.New(http.StatusUnprocessableEntity, "ACCOUNT_ARCHIVED",
+		"Esta cuenta está archivada. Elige otra.")
 )
 
 // Handler atiende Tarjetas de Crédito y la compra con tarjeta.
@@ -61,6 +64,7 @@ func (h *Handler) Routes(protected gin.IRoutes) {
 	protected.POST("/credit-purchases", h.createPurchase)
 	protected.PATCH("/credit-purchases/:id", h.updatePurchase)
 	protected.DELETE("/credit-purchases/:id", h.deletePurchase)
+	protected.POST("/credit-purchases/:id/pay", h.pay)
 }
 
 type amountResponse struct {
@@ -376,7 +380,43 @@ func respondError(c *gin.Context, err error) {
 		apierror.Respond(c, errCardHasPending)
 	case errors.Is(err, domain.ErrPurchaseAlreadyPaid):
 		apierror.Respond(c, errPurchaseAlreadyPaid)
+	case errors.Is(err, domain.ErrAccountArchived):
+		apierror.Respond(c, errAccountArchived)
 	default:
 		apierror.Respond(c, err)
 	}
+}
+
+type payRequest struct {
+	AccountID  *string `json:"account_id"`
+	PaidAmount *string `json:"paid_amount"`
+	PaidOn     *string `json:"paid_on"`
+}
+
+type paymentResponse struct {
+	Purchase    purchaseResponse `json:"purchase"`
+	Transaction any              `json:"transaction"`
+}
+
+func (h *Handler) pay(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+	var req payRequest
+	if !bind(c, &req) {
+		return
+	}
+	ids, ok := parseIDs(c, idField{"account_id", req.AccountID})
+	if !ok {
+		return
+	}
+	payment, err := h.service.Pay(c.Request.Context(), userID(c), id, app.PayInput{
+		AccountID: ids["account_id"], PaidAmount: req.PaidAmount, PaidOn: req.PaidOn,
+	})
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	apierror.OK(c, paymentResponse{Purchase: toPurchaseResponse(payment.Purchase), Transaction: payment.Transaction})
 }

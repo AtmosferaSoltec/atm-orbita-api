@@ -42,7 +42,7 @@ func New(runner tx.Runner, c clock.Clock, profiles profile.Reader) *Module {
 	categories := app.NewCategoryService(categoryRepo, c)
 	accounts := app.NewAccountService(accountRepo, source, c)
 	transactionRepo := postgres.NewTransactions(runner)
-	transactions := app.NewTransactionService(transactionRepo, accountRepo, categoryRepo, source, c)
+	transactions := app.NewTransactionService(transactionRepo, accountRepo, categoryRepo, source, runner, c)
 	transfers := app.NewTransferService(postgres.NewTransfers(runner), accountRepo, source, c)
 	return &Module{
 		categories:          categories,
@@ -73,6 +73,55 @@ func (m *Module) OnUserRegistered(ctx context.Context, userID uuid.UUID, mainCur
 		return err
 	}
 	return m.accounts.CreateInitial(ctx, userID, mainCurrency)
+}
+
+// ErrAccountArchived: la cuenta con que se quiere pagar está archivada.
+var ErrAccountArchived = domain.ErrAccountArchived
+
+// PaymentExpense es el egreso que crea el pago de una compra con tarjeta: la
+// categoría y la descripción son las de la compra.
+type PaymentExpense struct {
+	PurchaseID  uuid.UUID
+	AccountID   uuid.UUID
+	CategoryID  uuid.UUID
+	Description string
+	Amount      decimal.Decimal
+	OccurredOn  dates.LocalDate
+}
+
+// PaymentLedger es lo que credit (plan 10) pide al libro para pagar una compra.
+type PaymentLedger interface {
+	// CreatePaymentExpense crea el egreso en la transacción en curso y lo devuelve
+	// con la forma JSON de GET /entries. Errores: ErrNotFound, ErrAccountArchived.
+	CreatePaymentExpense(ctx context.Context, userID uuid.UUID, in PaymentExpense) (transactionID uuid.UUID, entry any, err error)
+}
+
+// PaymentReverter vuelve a pendiente la compra de un egreso de pago que se
+// elimina. Lo implementa credit; el libro lo llama en la misma transacción.
+type PaymentReverter interface {
+	RevertPayment(ctx context.Context, userID, purchaseID uuid.UUID) error
+}
+
+// PaymentLedger da a credit la creación del egreso de un pago.
+func (m *Module) PaymentLedger() PaymentLedger { return paymentLedger{m.transactions} }
+
+// OnPaymentDeleted registra quién revierte un pago cuando se elimina su egreso
+// (lo cablea main con credit).
+func (m *Module) OnPaymentDeleted(reverter PaymentReverter) {
+	m.transactions.OnPaymentDeleted(reverter)
+}
+
+type paymentLedger struct{ service *app.TransactionService }
+
+func (p paymentLedger) CreatePaymentExpense(ctx context.Context, userID uuid.UUID, in PaymentExpense) (uuid.UUID, any, error) {
+	entry, err := p.service.CreatePaymentExpense(ctx, userID, app.PaymentExpense{
+		PurchaseID: in.PurchaseID, AccountID: in.AccountID, CategoryID: in.CategoryID,
+		Description: in.Description, Amount: in.Amount, OccurredOn: in.OccurredOn,
+	})
+	if err != nil {
+		return uuid.UUID{}, nil, err
+	}
+	return entry.ID, ledgerhttp.EntryResponses([]domain.ListEntry{{Movement: &entry}})[0], nil
 }
 
 // HomeReader es lo que Inicio (plan 08) pide al libro, ya con la forma JSON de

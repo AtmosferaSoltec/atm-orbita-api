@@ -29,9 +29,9 @@ type Module struct {
 }
 
 // New crea el módulo.
-func New(runner tx.Runner, c clock.Clock, categories ledger.CategoryReader, profiles profile.Reader) *Module {
+func New(runner tx.Runner, c clock.Clock, categories ledger.CategoryReader, profiles profile.Reader, payments ledger.PaymentLedger) *Module {
 	service := app.NewService(postgres.NewCards(runner), postgres.NewPurchases(runner),
-		categorySource{categories}, profileSource{profiles}, c)
+		categorySource{categories}, profileSource{profiles}, paymentSource{payments}, runner, c)
 	return &Module{service: service, handler: credithttp.NewHandler(service)}
 }
 
@@ -97,4 +97,27 @@ func (p profileSource) RequireUsable(ctx context.Context, userID uuid.UUID, code
 
 func (p profileSource) Today(ctx context.Context, userID uuid.UUID) (dates.LocalDate, error) {
 	return p.profiles.Today(ctx, userID)
+}
+
+// RevertPayment vuelve a pendiente la compra cuyo egreso de pago se eliminó
+// (ledger.PaymentReverter; lo cablea main). Corre en la transacción del libro.
+func (m *Module) RevertPayment(ctx context.Context, userID, purchaseID uuid.UUID) error {
+	return m.service.RevertPayment(ctx, userID, purchaseID)
+}
+
+// paymentSource adapta ledger.PaymentLedger al puerto app.PaymentLedger.
+type paymentSource struct{ payments ledger.PaymentLedger }
+
+func (p paymentSource) CreatePaymentExpense(ctx context.Context, userID uuid.UUID, in app.PaymentExpense) (uuid.UUID, any, error) {
+	id, entry, err := p.payments.CreatePaymentExpense(ctx, userID, ledger.PaymentExpense{
+		PurchaseID: in.PurchaseID, AccountID: in.AccountID, CategoryID: in.CategoryID,
+		Description: in.Description, Amount: in.Amount, OccurredOn: in.OccurredOn,
+	})
+	switch {
+	case errors.Is(err, ledger.ErrNotFound):
+		return uuid.UUID{}, nil, domain.ErrNotFound
+	case errors.Is(err, ledger.ErrAccountArchived):
+		return uuid.UUID{}, nil, domain.ErrAccountArchived
+	}
+	return id, entry, err
 }

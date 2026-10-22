@@ -31,6 +31,8 @@ const MaxRangeYears = 10
 var (
 	ErrAccountArchived  = errors.New("account archived")
 	ErrCategoryArchived = errors.New("category archived")
+	// ErrPaymentExpenseLocked: cambiar la categoría o la descripción del egreso de un pago.
+	ErrPaymentExpenseLocked = errors.New("payment expense locked")
 )
 
 // Transaction es un ingreso o un egreso. Su moneda es la de su cuenta y su
@@ -43,6 +45,8 @@ type Transaction struct {
 	Amount      decimal.Decimal
 	OccurredOn  dates.LocalDate
 	Description string
+	// CreditPurchaseID es la compra con tarjeta que pagó este egreso (plan 10), o nil.
+	CreditPurchaseID *uuid.UUID
 }
 
 // EntryAccount es lo que una fila de la lista muestra de su cuenta.

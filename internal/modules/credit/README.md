@@ -1,6 +1,6 @@
 # Módulo credit
 
-Las tarjetas de crédito y las compras hechas con ellas, que quedan **pendientes de pago** y no afectan saldos ni reportes. Pagar una compra es el plan 10. Plan: [`docs/plans/09-credit-cards-purchases.md`](../../../docs/plans/09-credit-cards-purchases.md).
+Las tarjetas de crédito y las compras hechas con ellas, que quedan **pendientes de pago** y no afectan saldos ni reportes. Planes: [`09`](../../../docs/plans/09-credit-cards-purchases.md) y [`10`](../../../docs/plans/10-credit-payments.md) (pagar).
 
 ## Tablas (dueño)
 
@@ -10,8 +10,9 @@ Las tarjetas de crédito y las compras hechas con ellas, que quedan **pendientes
 
 | Qué | Para quién |
 |---|---|
-| `New(runner, clock, ledger.CategoryReader, profile.Reader)`, `Routes(protected)` | `cmd/api/main.go` |
+| `New(runner, clock, ledger.CategoryReader, profile.Reader, ledger.PaymentLedger)`, `Routes(protected)` | `cmd/api/main.go` |
 | `CreditSummary()`: `Summary(ctx, userID)` → pendientes, próxima fecha límite y si alguna es urgente (`ok=false` sin pendientes) | Inicio (plan 08) |
+| `RevertPayment(ctx, userID, purchaseID)` (cumple `ledger.PaymentReverter`) | `ledger`, al eliminar el egreso de un pago (lo cablea `main.go`) |
 
 ## Reglas
 
@@ -22,10 +23,12 @@ Las tarjetas de crédito y las compras hechas con ellas, que quedan **pendientes
 - Tarjetas: nombre y moneda editables (sin tipo de cambio, solo la principal); cambiar la moneda no toca las compras existentes. No se archiva una tarjeta con compras pendientes.
 - Deuda por moneda, sin mezclar; la principal primero. Tarjetas: la de fecha límite más próxima primero; las que no deben nada al final.
 - Urgente = vence en 3 días o menos, o ya venció.
+- **Pagar** (plan 10): en una sola transacción se bloquea la compra (`FOR UPDATE`), `ledger` crea el egreso en la cuenta que paga (categoría y descripción de la compra, monto realmente descontado en la moneda de esa cuenta, fecha de pago) y la compra pasa a pagada con el id del egreso. La cuenta, el monto y la fecha viven en el egreso, no en la compra. De dos pagos simultáneos, el segundo recibe `409`.
+- Eliminar el egreso del pago (desde Movimientos) devuelve la compra a pendiente y desarchiva su tarjeta si hacía falta.
 
 ## Endpoints
 
-`GET/POST /credit-cards`, `PATCH /credit-cards/{id}`, `POST /credit-cards/{id}/archive`; `GET /credit-purchases?status=pending`, `POST /credit-purchases`, `PATCH`/`DELETE /credit-purchases/{id}`.
+`GET/POST /credit-cards`, `PATCH /credit-cards/{id}`, `POST /credit-cards/{id}/archive`; `GET /credit-purchases?status=pending`, `POST /credit-purchases`, `PATCH`/`DELETE /credit-purchases/{id}`, `POST /credit-purchases/{id}/pay`.
 
 ## Errores
 
@@ -37,6 +40,8 @@ Las tarjetas de crédito y las compras hechas con ellas, que quedan **pendientes
 | `FX_RATE_NOT_CONFIGURED` | 422 | Tarjeta (o compra en una tarjeta) en otra moneda sin tipo de cambio |
 | `CARD_ARCHIVED` / `CATEGORY_ARCHIVED` | 422 | Registrar o mover una compra a una tarjeta o categoría archivada |
 | `CARD_HAS_PENDING_PURCHASES` | 409 | Archivar una tarjeta que debe |
-| `PURCHASE_ALREADY_PAID` | 409 | Editar o eliminar una compra pagada |
+| `PURCHASE_ALREADY_PAID` | 409 | Pagar, editar o eliminar una compra pagada |
+| `VALIDATION_FAILED` + `ACCOUNT_REQUIRED`, `AMOUNT_REQUIRED`, `FUTURE_DATE` | 400 | Pago, en ese orden |
+| `ACCOUNT_ARCHIVED` | 422 | Pagar desde una cuenta archivada |
 | `ID_CONFLICT` | 409 | El `id` ya existe con otro contenido |
 | `NOT_FOUND` | 404 | No existe o es de otro usuario |

@@ -30,6 +30,8 @@ const (
 	CodeDescriptionTooLong   = "DESCRIPTION_TOO_LONG"
 	CodeDueDatePast          = "DUE_DATE_PAST"
 	CodeInvalidFormat        = "INVALID_FORMAT"
+	CodeAccountRequired      = "ACCOUNT_REQUIRED"
+	CodeFutureDate           = "FUTURE_DATE"
 )
 
 // Largos máximos, en caracteres.
@@ -55,6 +57,7 @@ var (
 	ErrCardHasPending      = errors.New("card has pending purchases")
 	ErrPurchaseAlreadyPaid = errors.New("purchase already paid")
 	ErrCategoryArchived    = errors.New("category archived")
+	ErrAccountArchived     = errors.New("account archived")
 )
 
 // FieldError es un campo con problema.

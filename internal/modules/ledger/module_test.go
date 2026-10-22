@@ -64,7 +64,8 @@ func newHarnessAt(t *testing.T, c clock.Clock) *harness {
 	profileModule := profile.New(runner, c)
 	ledgerModule := ledger.New(runner, c, profileModule.Reader())
 	reportsModule := reports.New(ledgerModule.ReportQuery(), profileModule.Reader())
-	creditModule := credit.New(runner, c, ledgerModule.CategoryReader(), profileModule.Reader())
+	creditModule := credit.New(runner, c, ledgerModule.CategoryReader(), profileModule.Reader(), ledgerModule.PaymentLedger())
+	ledgerModule.OnPaymentDeleted(creditModule)
 	homeModule := home.New(profileModule.Reader(), ledgerModule.HomeReader(), reportsModule.Reader(), creditModule.CreditSummary())
 	identityModule.OnUserRegistered(func(ctx context.Context, u identity.NewUser) error {
 		if err := profileModule.OnUserRegistered(ctx, u.ID, u.MainCurrency, u.Timezone); err != nil {

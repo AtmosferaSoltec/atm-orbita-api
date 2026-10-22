@@ -30,6 +30,7 @@ func (r Transactions) Insert(ctx context.Context, userID uuid.UUID, t domain.Tra
 	n, err := r.q(ctx).InsertTransaction(ctx, sqlcgen.InsertTransactionParams{
 		ID: t.ID, UserID: userID, AccountID: t.AccountID, CategoryID: t.CategoryID, Kind: string(t.Kind),
 		Amount: t.Amount, OccurredOn: t.OccurredOn.Time(), Description: t.Description, CreatedAt: at,
+		Source: sourceOf(t), SourceID: t.CreditPurchaseID,
 	})
 	return n == 1, err
 }
@@ -47,6 +48,7 @@ func (r Transactions) Get(ctx context.Context, userID, id uuid.UUID) (app.Stored
 		Transaction: domain.Transaction{
 			ID: row.ID, AccountID: row.AccountID, CategoryID: row.CategoryID, Kind: domain.Kind(row.Kind),
 			Amount: row.Amount, OccurredOn: dates.FromTime(row.OccurredOn), Description: row.Description,
+			CreditPurchaseID: row.SourceID,
 		},
 		Deleted: row.DeletedAt != nil,
 	}, nil
@@ -103,6 +105,7 @@ func (r Transactions) List(ctx context.Context, userID uuid.UUID, f app.EntryFil
 				Transaction: domain.Transaction{
 					ID: row.ID, AccountID: row.AccountID, CategoryID: row.CategoryID, Kind: domain.Kind(row.Kind),
 					Amount: row.Amount, OccurredOn: dates.FromTime(row.OccurredOn), Description: row.Description,
+					CreditPurchaseID: row.SourceID,
 				},
 				Account: domain.EntryAccount{
 					ID: row.AccountID, Name: row.AccountName, Type: domain.AccountType(row.AccountType), Currency: row.AccountCurrency,
@@ -178,4 +181,17 @@ func (r Transactions) TotalsByCategory(ctx context.Context, userID uuid.UUID, fr
 		})
 	}
 	return out, nil
+}
+
+// Orígenes de un movimiento (columna source).
+const (
+	sourceManual        = "manual"
+	sourceCreditPayment = "credit_payment"
+)
+
+func sourceOf(t domain.Transaction) string {
+	if t.CreditPurchaseID != nil {
+		return sourceCreditPayment
+	}
+	return sourceManual
 }

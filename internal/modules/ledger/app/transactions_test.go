@@ -94,7 +94,7 @@ func newTxFixture(t *testing.T) txFixture {
 	require.NoError(t, categories.Archive(ctx, user, f.oldCat))
 	f.transactions = &fakeTransactions{users: map[uuid.UUID]uuid.UUID{}}
 	profile := &fakeFx{fx: domain.Fx{Main: "PEN", Secondary: "USD"}, today: dates.New(2026, time.October, 2)}
-	f.service = NewTransactionService(f.transactions, accounts, categories, profile, clock.Fixed{At: time.Date(2026, 10, 3, 1, 0, 0, 0, time.UTC)})
+	f.service = NewTransactionService(f.transactions, accounts, categories, profile, runInline{}, clock.Fixed{At: time.Date(2026, 10, 3, 1, 0, 0, 0, time.UTC)})
 	return f
 }
 
@@ -192,4 +192,66 @@ func TestListEntriesChecksTheRangeAndThePage(t *testing.T) {
 		{Field: "page", Code: domain.CodeInvalidFormat},
 		{Field: "page_size", Code: domain.CodeInvalidFormat},
 	}, problems.Fields)
+}
+
+// runInline corre fn sin transacción: los fakes no la necesitan.
+type runInline struct{}
+
+func (runInline) InTx(ctx context.Context, fn func(ctx context.Context) error) error { return fn(ctx) }
+
+type fakeReverter struct {
+	reverted []uuid.UUID
+	err      error
+}
+
+func (r *fakeReverter) RevertPayment(_ context.Context, _, purchaseID uuid.UUID) error {
+	r.reverted = append(r.reverted, purchaseID)
+	return r.err
+}
+
+func TestThePaymentExpenseOnlyChangesAccountAmountAndDate(t *testing.T) {
+	f := newTxFixture(t)
+	purchase := uuid.New()
+	entry, err := f.service.CreatePaymentExpense(context.Background(), f.user, PaymentExpense{
+		PurchaseID: purchase, AccountID: f.cash, CategoryID: f.food, Description: "Pasajes",
+		Amount: decimal.RequireFromString("240"), OccurredOn: dates.New(2026, time.October, 2),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, &purchase, entry.CreditPurchaseID)
+	assert.Equal(t, domain.KindExpense, entry.Kind)
+
+	_, err = f.service.Update(context.Background(), f.user, entry.ID, UpdateTransactionInput{Amount: ptr("238.50"), OccurredOn: ptr("2026-10-01")})
+	assert.NoError(t, err)
+	_, err = f.service.Update(context.Background(), f.user, entry.ID, UpdateTransactionInput{Description: ptr("Otra cosa")})
+	assert.ErrorIs(t, err, domain.ErrPaymentExpenseLocked)
+	_, err = f.service.Update(context.Background(), f.user, entry.ID, UpdateTransactionInput{CategoryID: &f.salary})
+	assert.ErrorIs(t, err, domain.ErrPaymentExpenseLocked)
+	_, err = f.service.Update(context.Background(), f.user, entry.ID, UpdateTransactionInput{Description: ptr(" Pasajes "), CategoryID: &f.food})
+	assert.NoError(t, err, "la misma descripción y categoría no cuentan como cambio")
+}
+
+func TestDeletingThePaymentExpenseRevertsItsPurchase(t *testing.T) {
+	f := newTxFixture(t)
+	reverter := &fakeReverter{}
+	f.service.OnPaymentDeleted(reverter)
+	purchase := uuid.New()
+	entry, err := f.service.CreatePaymentExpense(context.Background(), f.user, PaymentExpense{
+		PurchaseID: purchase, AccountID: f.cash, CategoryID: f.food, Amount: decimal.RequireFromString("10"),
+		OccurredOn: dates.New(2026, time.October, 2),
+	})
+	require.NoError(t, err)
+	require.NoError(t, f.service.Delete(context.Background(), f.user, entry.ID))
+	assert.Equal(t, []uuid.UUID{purchase}, reverter.reverted)
+
+	// Un movimiento común no toca ninguna compra.
+	plain, _, err := f.service.Create(context.Background(), f.user, CreateTransactionInput{AccountID: &f.cash, CategoryID: &f.food, Amount: ptr("1.00")})
+	require.NoError(t, err)
+	require.NoError(t, f.service.Delete(context.Background(), f.user, plain.ID))
+	assert.Len(t, reverter.reverted, 1)
+
+	// Un pago no se crea desde una cuenta archivada.
+	_, err = f.service.CreatePaymentExpense(context.Background(), f.user, PaymentExpense{
+		PurchaseID: uuid.New(), AccountID: f.archivedAcct, CategoryID: f.food, Amount: decimal.RequireFromString("1"),
+	})
+	assert.ErrorIs(t, err, domain.ErrAccountArchived)
 }

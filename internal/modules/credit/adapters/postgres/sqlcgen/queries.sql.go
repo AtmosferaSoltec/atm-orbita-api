@@ -298,6 +298,105 @@ func (q *Queries) ListPendingPurchases(ctx context.Context, userID uuid.UUID) ([
 	return items, nil
 }
 
+const lockPurchase = `-- name: LockPurchase :one
+SELECT id, user_id, card_id, category_id, description, amount, currency, purchase_date,
+       due_date, status, deleted_at
+FROM credit_purchases
+WHERE id = $1
+FOR UPDATE
+`
+
+type LockPurchaseRow struct {
+	ID           uuid.UUID
+	UserID       uuid.UUID
+	CardID       uuid.UUID
+	CategoryID   uuid.UUID
+	Description  string
+	Amount       decimal.Decimal
+	Currency     string
+	PurchaseDate time.Time
+	DueDate      time.Time
+	Status       string
+	DeletedAt    *time.Time
+}
+
+// Bloquea la compra hasta el fin de la transacción: de dos pagos simultáneos,
+// el segundo espera y la encuentra ya pagada.
+func (q *Queries) LockPurchase(ctx context.Context, id uuid.UUID) (LockPurchaseRow, error) {
+	row := q.db.QueryRow(ctx, lockPurchase, id)
+	var i LockPurchaseRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.CardID,
+		&i.CategoryID,
+		&i.Description,
+		&i.Amount,
+		&i.Currency,
+		&i.PurchaseDate,
+		&i.DueDate,
+		&i.Status,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const markPurchasePaid = `-- name: MarkPurchasePaid :execrows
+UPDATE credit_purchases
+SET status = 'paid', paid_at = now(), payment_transaction_id = $3, updated_at = now()
+WHERE id = $1 AND user_id = $2 AND status = 'pending' AND deleted_at IS NULL
+`
+
+type MarkPurchasePaidParams struct {
+	ID                   uuid.UUID
+	UserID               uuid.UUID
+	PaymentTransactionID *uuid.UUID
+}
+
+func (q *Queries) MarkPurchasePaid(ctx context.Context, arg MarkPurchasePaidParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markPurchasePaid, arg.ID, arg.UserID, arg.PaymentTransactionID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const revertPurchasePayment = `-- name: RevertPurchasePayment :one
+UPDATE credit_purchases
+SET status = 'pending', paid_at = NULL, payment_transaction_id = NULL, updated_at = now()
+WHERE id = $1 AND user_id = $2 AND status = 'paid'
+RETURNING card_id
+`
+
+type RevertPurchasePaymentParams struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+// La compra vuelve a pendiente; devuelve su tarjeta para mostrarla de nuevo.
+func (q *Queries) RevertPurchasePayment(ctx context.Context, arg RevertPurchasePaymentParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, revertPurchasePayment, arg.ID, arg.UserID)
+	var card_id uuid.UUID
+	err := row.Scan(&card_id)
+	return card_id, err
+}
+
+const unarchiveCard = `-- name: UnarchiveCard :exec
+UPDATE credit_cards
+SET archived_at = NULL, updated_at = now()
+WHERE id = $1 AND user_id = $2 AND archived_at IS NOT NULL
+`
+
+type UnarchiveCardParams struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+func (q *Queries) UnarchiveCard(ctx context.Context, arg UnarchiveCardParams) error {
+	_, err := q.db.Exec(ctx, unarchiveCard, arg.ID, arg.UserID)
+	return err
+}
+
 const updateCard = `-- name: UpdateCard :execrows
 UPDATE credit_cards
 SET name = $3, currency = $4, updated_at = now()

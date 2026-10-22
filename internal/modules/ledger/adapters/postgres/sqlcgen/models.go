@@ -49,6 +49,8 @@ type Transaction struct {
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	DeletedAt   *time.Time
+	Source      string
+	SourceID    *uuid.UUID
 }
 
 type Transfer struct {

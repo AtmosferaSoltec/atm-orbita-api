@@ -43,6 +43,7 @@ type Cards interface {
 	Update(ctx context.Context, userID uuid.UUID, c domain.Card) error
 	Archive(ctx context.Context, userID, id uuid.UUID) error
 	CountPending(ctx context.Context, userID, id uuid.UUID) (int64, error)
+	Unarchive(ctx context.Context, userID, id uuid.UUID) error
 }
 
 // Purchases guarda compras. Todo método recibe el usuario.
@@ -54,6 +55,12 @@ type Purchases interface {
 	// Update y Delete solo tocan una pendiente; devuelven domain.ErrNotFound si no la hay.
 	Update(ctx context.Context, userID uuid.UUID, p domain.Purchase) error
 	Delete(ctx context.Context, userID, id uuid.UUID) error
+	// Lock busca la compra y la bloquea hasta el fin de la transacción (pagar).
+	Lock(ctx context.Context, userID, id uuid.UUID) (StoredPurchase, error)
+	// MarkPaid devuelve domain.ErrPurchaseAlreadyPaid si ya no estaba pendiente.
+	MarkPaid(ctx context.Context, userID, id, transactionID uuid.UUID) error
+	// Revert vuelve a pendiente una pagada y devuelve su tarjeta; ok=false si no estaba pagada.
+	Revert(ctx context.Context, userID, id uuid.UUID) (cardID uuid.UUID, ok bool, err error)
 }
 
 // Categories lee categorías del libro (módulo ledger), también las archivadas.
@@ -81,12 +88,14 @@ type Service struct {
 	purchases  Purchases
 	categories Categories
 	profile    Profile
+	ledger     PaymentLedger
+	tx         Transactor
 	clock      clock.Clock
 }
 
 // NewService crea el servicio.
-func NewService(cards Cards, purchases Purchases, categories Categories, profile Profile, c clock.Clock) *Service {
-	return &Service{cards: cards, purchases: purchases, categories: categories, profile: profile, clock: c}
+func NewService(cards Cards, purchases Purchases, categories Categories, profile Profile, ledger PaymentLedger, tx Transactor, c clock.Clock) *Service {
+	return &Service{cards: cards, purchases: purchases, categories: categories, profile: profile, ledger: ledger, tx: tx, clock: c}
 }
 
 // --- Tarjetas ---
