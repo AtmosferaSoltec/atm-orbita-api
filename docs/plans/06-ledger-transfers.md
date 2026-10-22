@@ -108,6 +108,34 @@ Integración (datos de ejemplo):
 
 Ninguna.
 
+## Estado (22 oct 2026)
+
+Implementado en API y Android, en revisión.
+
+| Comprobación | Resultado |
+|---|---|
+| `gofmt`, `go vet`, `golangci-lint run`, `go build` | Sin problemas (`0 issues`) |
+| `go test ./...` sin base / contra el Postgres local | Pasa. Dominio: reglas de moneda (misma moneda con montos distintos o con tipo de cambio → `AMOUNTS_MUST_MATCH`; monedas distintas sin tipo de cambio, con cero o con texto → `RATE_REQUIRED`; 3.17 se guarda tal cual) y comparación de reintentos. Servicio (4): orden de validación; entre monedas guarda lo que manda la app; editar a la misma moneda con `exchange_rate: null`; no tocar el tipo de cambio lo conserva; cuentas archivadas y ajenas; reintento y eliminar dos veces. Integración por HTTP (3): US$ 20 → S/ 64 con 3.20 deja 230.00 / 1,309.80; con 63.40 y 3.17 entran exactamente 63.40; eliminarla devuelve los dos saldos; no es movimiento; validación y cuentas de otro usuario → 404; la lista mezcla y pagina las dos tablas en el orden de `SampleData.kt`, `q` busca en la nota y `account_id` coincide con origen o destino |
+| Migración `00006`: `down` y `up` | Funciona |
+| OpenAPI | Válido (Redocly) |
+| Android: pruebas, `lintDebug`, `installDebug` | 75 pruebas pasan; ningún aviso de lint en los archivos nuevos |
+
+**En el teléfono** (API real + Postgres local):
+
+| Prueba | Resultado |
+|---|---|
+| Nueva cuenta "Dolares" en USD y transferir S/ 320 de Ahorros | El formulario propone 0.3125 y US$ 100.00; tras guardar, Ahorros S/ 4,480.00 y Dolares US$ 100.00, como mostraba "Saldos después de transferir"; en la base, 320.00 → 100.00 con 0.312500 |
+| Editarla: destino Efectivo (misma moneda) | En la base queda sin tipo de cambio (`NULL`) y 320.00 → 320.00; Efectivo S/ 310.00, Dolares US$ 0.00 |
+| Eliminarla | Los saldos vuelven a como estaban |
+| Transferir S/ 50, cerrar y abrir la app | Sigue en Inicio ("Ahorros → Efectivo") |
+
 ## Desviaciones
 
-(Se completan al implementar.)
+- **La lista se arma en dos pasos**: una consulta ordena y pagina las claves de las dos tablas (`UNION ALL` de `entry_type`, `id`, fecha y creación) y luego se leen los detalles de cada tipo con `id = ANY(…)`. Mismo orden y páginas que un solo `UNION ALL`, pero cada tipo se lee con sus propias columnas y sqlc genera tipos simples.
+- **Al editar, `exchange_rate: null` borra el tipo de cambio y no mandarlo lo deja como estaba.** Android manda siempre el campo, también como `null` explícito.
+- **Si no viene `occurred_on`, la fecha es hoy** (como en los movimientos); Android la manda siempre.
+- **`ACCOUNT_REQUIRED`** si falta alguna de las dos cuentas; `SAME_ACCOUNT` va en el campo `to_account_id` y `AMOUNTS_MUST_MATCH` en `to_amount`.
+- **`POST` y `PATCH /transfers` responden la fila de la lista** (`entry_type: "transfer"`), como los movimientos. Las cuentas traen también su `type`.
+- **`AMOUNTS_MUST_MATCH` no existe en Android** (su formulario iguala los montos solo); si llegara, se vería el mensaje genérico.
+- **"El reporte de octubre no cambia"** se comprobará en el plan 07, que es el de reportes; hoy las transferencias no tocan ninguna suma de movimientos.
+- **Android: `DemoEntriesMix` sigue, más chico, hasta el plan 10**: ya solo mezcla el gasto de un pago de tarjeta (que aún es demo) hecho desde una cuenta del API. El puente de cuentas también sigue por eso.
