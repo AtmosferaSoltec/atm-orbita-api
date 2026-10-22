@@ -21,6 +21,7 @@ import (
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/ledger"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/profile"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/reports"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/auth"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/clock"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/httpserver"
@@ -28,7 +29,7 @@ import (
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/tx"
 )
 
-// Integración: identity + profile + ledger por HTTP contra el Postgres local,
+// Integración: identity + profile + ledger + reports por HTTP contra el Postgres local,
 // cableados como en cmd/api/main.go.
 
 type harness struct {
@@ -60,6 +61,7 @@ func newHarnessAt(t *testing.T, c clock.Clock) *harness {
 	require.NoError(t, err)
 	profileModule := profile.New(runner, c)
 	ledgerModule := ledger.New(runner, c, profileModule.Reader())
+	reportsModule := reports.New(ledgerModule.ReportQuery(), profileModule.Reader())
 	identityModule.OnUserRegistered(func(ctx context.Context, u identity.NewUser) error {
 		if err := profileModule.OnUserRegistered(ctx, u.ID, u.MainCurrency, u.Timezone); err != nil {
 			return err
@@ -70,6 +72,7 @@ func newHarnessAt(t *testing.T, c clock.Clock) *harness {
 	identityModule.Routes(api, api, protected)
 	profileModule.Routes(api, protected)
 	ledgerModule.Routes(protected)
+	reportsModule.Routes(protected)
 	return &harness{router: router, pool: pool}
 }
 

@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	ledgerhttp "github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/ledger/adapters/http"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/ledger/adapters/postgres"
@@ -28,6 +29,7 @@ type Module struct {
 	accountsHandler     *ledgerhttp.Accounts
 	transactionsHandler *ledgerhttp.Transactions
 	transfersHandler    *ledgerhttp.Transfers
+	transactionRepo     postgres.Transactions
 }
 
 // New crea el módulo. Del perfil lee las monedas, el tipo de cambio y "hoy".
@@ -37,7 +39,8 @@ func New(runner tx.Runner, c clock.Clock, profiles profile.Reader) *Module {
 	source := profileSource{profiles}
 	categories := app.NewCategoryService(categoryRepo, c)
 	accounts := app.NewAccountService(accountRepo, source, c)
-	transactions := app.NewTransactionService(postgres.NewTransactions(runner), accountRepo, categoryRepo, source, c)
+	transactionRepo := postgres.NewTransactions(runner)
+	transactions := app.NewTransactionService(transactionRepo, accountRepo, categoryRepo, source, c)
 	transfers := app.NewTransferService(postgres.NewTransfers(runner), accountRepo, source, c)
 	return &Module{
 		categories:          categories,
@@ -45,6 +48,7 @@ func New(runner tx.Runner, c clock.Clock, profiles profile.Reader) *Module {
 		categoriesHandler:   ledgerhttp.NewCategories(categories),
 		accountsHandler:     ledgerhttp.NewAccounts(accounts),
 		transactionsHandler: ledgerhttp.NewTransactions(transactions),
+		transactionRepo:     transactionRepo,
 		transfersHandler:    ledgerhttp.NewTransfers(transfers),
 	}
 }
@@ -65,6 +69,44 @@ func (m *Module) OnUserRegistered(ctx context.Context, userID uuid.UUID, mainCur
 		return err
 	}
 	return m.accounts.CreateInitial(ctx, userID, mainCurrency)
+}
+
+// CategoryTotal es la suma de los movimientos de una categoría en un periodo, en
+// la moneda de sus cuentas (sin convertir).
+type CategoryTotal struct {
+	Currency   string
+	Kind       string
+	CategoryID uuid.UUID
+	Name       string
+	Color      string
+	Total      decimal.Decimal
+	Movements  int64
+}
+
+// ReportQuery es lo que el módulo reports pide al libro: solo movimientos (no
+// transferencias), sin los eliminados.
+type ReportQuery interface {
+	TotalsByCategory(ctx context.Context, userID uuid.UUID, from, to dates.LocalDate) ([]CategoryTotal, error)
+}
+
+// ReportQuery da las sumas para los reportes.
+func (m *Module) ReportQuery() ReportQuery { return reportQuery{m.transactionRepo} }
+
+type reportQuery struct{ repo postgres.Transactions }
+
+func (q reportQuery) TotalsByCategory(ctx context.Context, userID uuid.UUID, from, to dates.LocalDate) ([]CategoryTotal, error) {
+	rows, err := q.repo.TotalsByCategory(ctx, userID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]CategoryTotal, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, CategoryTotal{
+			Currency: r.Currency, Kind: string(r.Kind), CategoryID: r.Category.ID, Name: r.Category.Name,
+			Color: r.Category.Color, Total: r.Total, Movements: r.Movements,
+		})
+	}
+	return out, nil
 }
 
 // profileSource adapta el perfil al puerto app.Profile.

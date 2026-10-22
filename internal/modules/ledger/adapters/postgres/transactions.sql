@@ -70,3 +70,16 @@ FROM transactions t
 JOIN accounts a ON a.id = t.account_id
 JOIN categories c ON c.id = t.category_id
 WHERE t.user_id = sqlc.arg(user_id) AND t.id = ANY(sqlc.arg(ids)::uuid[]);
+
+-- Para los reportes (plan 07): la suma de los movimientos de un periodo por
+-- moneda de la cuenta, tipo y categoría, hecha en la base. Las categorías
+-- archivadas siguen apareciendo con los movimientos que tuvieron.
+-- name: TotalsByCategory :many
+SELECT a.currency, t.kind, c.id AS category_id, c.name AS category_name, c.color AS category_color,
+       SUM(t.amount)::numeric AS total, count(*) AS movements
+FROM transactions t
+JOIN accounts a ON a.id = t.account_id
+JOIN categories c ON c.id = t.category_id
+WHERE t.user_id = sqlc.arg(user_id) AND t.deleted_at IS NULL
+  AND t.occurred_on BETWEEN sqlc.arg(date_from) AND sqlc.arg(date_to)
+GROUP BY a.currency, t.kind, c.id, c.name, c.color;

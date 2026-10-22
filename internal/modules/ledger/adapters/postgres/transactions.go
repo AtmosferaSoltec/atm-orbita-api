@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/shopspring/decimal"
 
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/ledger/adapters/postgres/sqlcgen"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/ledger/app"
@@ -147,4 +148,34 @@ func (r Transactions) Count(ctx context.Context, userID uuid.UUID, f app.EntryFi
 	return r.q(ctx).CountEntries(ctx, sqlcgen.CountEntriesParams{
 		UserID: userID, DateFrom: f.From.Time(), DateTo: f.To.Time(), AccountID: f.AccountID, Pattern: f.Pattern,
 	})
+}
+
+// TotalByCategory es la suma de los movimientos de una categoría en una moneda.
+type TotalByCategory struct {
+	Currency  string
+	Kind      domain.Kind
+	Category  domain.Category
+	Total     decimal.Decimal
+	Movements int64
+}
+
+// TotalsByCategory suma en la base los movimientos del periodo por moneda de la
+// cuenta, tipo y categoría.
+func (r Transactions) TotalsByCategory(ctx context.Context, userID uuid.UUID, from, to dates.LocalDate) ([]TotalByCategory, error) {
+	rows, err := r.q(ctx).TotalsByCategory(ctx, sqlcgen.TotalsByCategoryParams{UserID: userID, DateFrom: from.Time(), DateTo: to.Time()})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]TotalByCategory, 0, len(rows))
+	for _, row := range rows {
+		kind := domain.Kind(row.Kind)
+		out = append(out, TotalByCategory{
+			Currency:  row.Currency,
+			Kind:      kind,
+			Category:  domain.Category{ID: row.CategoryID, Name: row.CategoryName, Kind: kind, Color: row.CategoryColor},
+			Total:     row.Total,
+			Movements: row.Movements,
+		})
+	}
+	return out, nil
 }

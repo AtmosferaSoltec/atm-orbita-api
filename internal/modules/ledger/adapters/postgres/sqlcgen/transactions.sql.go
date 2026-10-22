@@ -277,6 +277,64 @@ func (q *Queries) ListTransactionsByIDs(ctx context.Context, arg ListTransaction
 	return items, nil
 }
 
+const totalsByCategory = `-- name: TotalsByCategory :many
+SELECT a.currency, t.kind, c.id AS category_id, c.name AS category_name, c.color AS category_color,
+       SUM(t.amount)::numeric AS total, count(*) AS movements
+FROM transactions t
+JOIN accounts a ON a.id = t.account_id
+JOIN categories c ON c.id = t.category_id
+WHERE t.user_id = $1 AND t.deleted_at IS NULL
+  AND t.occurred_on BETWEEN $2 AND $3
+GROUP BY a.currency, t.kind, c.id, c.name, c.color
+`
+
+type TotalsByCategoryParams struct {
+	UserID   uuid.UUID
+	DateFrom time.Time
+	DateTo   time.Time
+}
+
+type TotalsByCategoryRow struct {
+	Currency      string
+	Kind          string
+	CategoryID    uuid.UUID
+	CategoryName  string
+	CategoryColor string
+	Total         decimal.Decimal
+	Movements     int64
+}
+
+// Para los reportes (plan 07): la suma de los movimientos de un periodo por
+// moneda de la cuenta, tipo y categoría, hecha en la base. Las categorías
+// archivadas siguen apareciendo con los movimientos que tuvieron.
+func (q *Queries) TotalsByCategory(ctx context.Context, arg TotalsByCategoryParams) ([]TotalsByCategoryRow, error) {
+	rows, err := q.db.Query(ctx, totalsByCategory, arg.UserID, arg.DateFrom, arg.DateTo)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TotalsByCategoryRow
+	for rows.Next() {
+		var i TotalsByCategoryRow
+		if err := rows.Scan(
+			&i.Currency,
+			&i.Kind,
+			&i.CategoryID,
+			&i.CategoryName,
+			&i.CategoryColor,
+			&i.Total,
+			&i.Movements,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateTransaction = `-- name: UpdateTransaction :execrows
 UPDATE transactions
 SET account_id = $3, category_id = $4, kind = $5, amount = $6, occurred_on = $7,
