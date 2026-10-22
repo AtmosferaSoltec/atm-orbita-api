@@ -185,8 +185,95 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
 
+  /currencies:
+    get:
+      summary: Monedas que la app permite elegir
+      operationId: getCurrencies
+      security: []
+      responses:
+        "200":
+          description: Catálogo (cacheable un día)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required: [code, symbol, name]
+                      properties:
+                        code: { type: string, example: PEN }
+                        symbol: { type: string, example: "S/" }
+                        name: { type: string, example: Soles }
+  /settings:
+    get:
+      summary: Preferencias del usuario (monedas, zona horaria, tipo de cambio)
+      operationId: getSettings
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SettingsResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      summary: Cambiar la moneda de visualización o la zona horaria
+      operationId: updateSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                display_currency: { type: string, description: "Una de las dos del par" }
+                timezone: { type: string, description: "Zona IANA" }
+      responses:
+        "200":
+          description: Ajustes actualizados
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SettingsResponse" }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "422":
+          description: "FX_RATE_NOT_CONFIGURED: ver el ahorro en la secundaria sin tipo de cambio"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /settings/fx:
+    put:
+      summary: Guardar el par de monedas y su tipo de cambio (juntos)
+      description: Nunca se guarda un par sin un tipo de cambio mayor que cero. Cada valor es una fila nueva del historial.
+      operationId: setFx
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [main_currency, secondary_currency, rate]
+              properties:
+                main_currency: { type: string, example: PEN }
+                secondary_currency: { type: string, example: USD }
+                rate: { $ref: "#/components/schemas/Rate" }
+      responses:
+        "200":
+          description: Ajustes con el tipo de cambio nuevo
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SettingsResponse" }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+
 components:
   responses:
+    Unauthorized:
+      description: UNAUTHORIZED
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
     ValidationFailed:
       description: VALIDATION_FAILED, con los campos en details
       content:
@@ -230,6 +317,26 @@ components:
           properties:
             user: { $ref: "#/components/schemas/User" }
             tokens: { $ref: "#/components/schemas/Tokens" }
+    SettingsResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [main_currency, secondary_currency, display_currency, timezone, fx_mode, fx_configured, rate, rate_updated_at]
+          properties:
+            main_currency: { type: string }
+            secondary_currency: { type: string }
+            display_currency: { type: string }
+            timezone: { type: string }
+            fx_mode: { type: string, enum: [manual, auto] }
+            fx_configured: { type: boolean }
+            rate:
+              description: Unidades de la principal por 1 de la secundaria; null sin tipo de cambio
+              oneOf:
+                - { $ref: "#/components/schemas/Rate" }
+                - { type: "null" }
+            rate_updated_at: { type: [string, "null"], format: date-time }
     RefreshRequest:
       type: object
       required: [refresh_token]
