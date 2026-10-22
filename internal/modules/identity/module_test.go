@@ -19,7 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity"
-	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity/adapters/security"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/auth"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/clock"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/httpserver"
@@ -31,8 +30,6 @@ import (
 // Integración: el módulo entero por HTTP contra el Postgres local (TEST_DATABASE_URL).
 
 const password = "vidanueva123"
-
-var fastArgon = security.Argon2Params{MemoryKiB: 1024, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
 
 type harness struct {
 	router *gin.Engine
@@ -51,7 +48,7 @@ func newHarness(t *testing.T, loginPerMinute int) *harness {
 	require.NoError(t, err)
 	module, err := identity.New(identity.Deps{
 		Tx: tx.NewRunner(pool), Clock: clock.System{}, JWTSecret: strings.Repeat("k", 64),
-		AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 30 * 24 * time.Hour, PasswordParams: &fastArgon,
+		AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 30 * 24 * time.Hour, PasswordParams: &identity.FastPasswordParams,
 	})
 	require.NoError(t, err)
 	limited := api.Group("", middleware.NewRateLimiter(loginPerMinute).Middleware())

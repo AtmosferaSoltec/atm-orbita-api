@@ -25,6 +25,13 @@ type NewUser = app.NewUser
 // RegistrationHook corre dentro de la transacción del registro.
 type RegistrationHook = app.RegistrationHook
 
+// PasswordParams son los parámetros de argon2id.
+type PasswordParams = security.Argon2Params
+
+// FastPasswordParams bajan el costo de argon2id: solo para pruebas, que miden la
+// lógica y no la resistencia del hash.
+var FastPasswordParams = PasswordParams{MemoryKiB: 1024, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
+
 // Deps son las dependencias del módulo.
 type Deps struct {
 	Tx              tx.Runner
@@ -33,7 +40,7 @@ type Deps struct {
 	AccessTokenTTL  time.Duration
 	RefreshTokenTTL time.Duration
 	// PasswordParams permite bajar el costo de argon2 en pruebas; vacío usa el de producción.
-	PasswordParams *security.Argon2Params
+	PasswordParams *PasswordParams
 }
 
 // Module arma el módulo con sus adaptadores.
