@@ -665,10 +665,177 @@ paths:
                         items: { $ref: "#/components/schemas/CurrencyReport" }
         "400": { $ref: "#/components/responses/ValidationFailed" }
 
+  /credit-cards:
+    get:
+      summary: Tarjetas activas con su deuda por moneda
+      description: La de fecha límite más próxima primero; las que no deben nada al final.
+      operationId: listCreditCards
+      responses:
+        "200":
+          description: Las tarjetas
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/CreditCard" }
+    post:
+      summary: Crear una tarjeta
+      operationId: createCreditCard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, currency]
+              properties:
+                id: { type: string, format: uuid }
+                name: { type: string, maxLength: 60 }
+                currency: { type: string, example: PEN }
+      responses:
+        "201":
+          description: Creada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreditCardResponse" }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "409": { $ref: "#/components/responses/IdConflict" }
+        "422": { $ref: "#/components/responses/FxNotConfigured" }
+
+  /credit-cards/{id}:
+    patch:
+      summary: Cambiar nombre o moneda (las compras existentes conservan la suya)
+      operationId: updateCreditCard
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 60 }
+                currency: { type: string }
+      responses:
+        "200":
+          description: Tarjeta actualizada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreditCardResponse" }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/FxNotConfigured" }
+
+  /credit-cards/{id}/archive:
+    post:
+      summary: Archivar una tarjeta que no debe nada
+      operationId: archiveCreditCard
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Archivada }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/CreditConflict" }
+
+  /credit-purchases:
+    get:
+      summary: Compras pendientes, de la fecha límite más próxima a la más lejana
+      operationId: listCreditPurchases
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [pending], default: pending } }
+      responses:
+        "200":
+          description: Las compras
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/CreditPurchase" }
+    post:
+      summary: Registrar una compra con tarjeta (queda pendiente)
+      description: La fecha de compra es hoy y la moneda, la de la tarjeta. No toca saldos ni reportes.
+      operationId: createCreditPurchase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [card_id, category_id, amount, due_date]
+              properties:
+                id: { type: string, format: uuid }
+                card_id: { type: string, format: uuid }
+                category_id: { type: string, format: uuid }
+                amount: { $ref: "#/components/schemas/Money" }
+                description: { type: string, maxLength: 500 }
+                due_date: { $ref: "#/components/schemas/LocalDate" }
+      responses:
+        "201":
+          description: Registrada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreditPurchaseResponse" }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/IdConflict" }
+        "422": { $ref: "#/components/responses/Archived" }
+
+  /credit-purchases/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      summary: Editar una compra pendiente (solo cambia lo que viene)
+      description: Movida a otra tarjeta toma su moneda. La fecha límite no puede quedar antes de la de compra.
+      operationId: updateCreditPurchase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                card_id: { type: string, format: uuid }
+                category_id: { type: string, format: uuid }
+                amount: { $ref: "#/components/schemas/Money" }
+                description: { type: string, maxLength: 500 }
+                due_date: { $ref: "#/components/schemas/LocalDate" }
+      responses:
+        "200":
+          description: Compra actualizada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreditPurchaseResponse" }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/CreditConflict" }
+        "422": { $ref: "#/components/responses/Archived" }
+    delete:
+      summary: Eliminar una compra pendiente
+      description: Solo cambia la deuda de su tarjeta. Eliminar una ya eliminada responde 204.
+      operationId: deleteCreditPurchase
+      responses:
+        "204": { description: Eliminada }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/CreditConflict" }
+
 components:
   responses:
+    CreditConflict:
+      description: CARD_HAS_PENDING_PURCHASES (archivar una tarjeta que debe) o PURCHASE_ALREADY_PAID (editar o eliminar una compra pagada)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
     Archived:
-      description: ACCOUNT_ARCHIVED o CATEGORY_ARCHIVED (no se usan en movimientos nuevos)
+      description: ACCOUNT_ARCHIVED, CATEGORY_ARCHIVED o CARD_ARCHIVED (no se usan en registros nuevos)
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -886,6 +1053,57 @@ components:
           type: string
           description: Del total de esa moneda y tipo, 1 decimal, HALF_UP
           example: "37.2"
+    CreditCard:
+      type: object
+      required: [id, name, currency, debt, pending_count, next_due_date]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, example: Mastercard Oro }
+        currency: { type: string, description: La de las compras nuevas }
+        debt:
+          type: array
+          description: Compras pendientes por moneda, sin mezclar; la principal primero
+          items:
+            type: object
+            required: [currency, amount]
+            properties:
+              currency: { type: string }
+              amount: { $ref: "#/components/schemas/Money" }
+        pending_count: { type: integer }
+        next_due_date:
+          oneOf:
+            - { $ref: "#/components/schemas/LocalDate" }
+            - { type: "null" }
+    CreditCardResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/CreditCard" }
+    CreditPurchase:
+      type: object
+      required: [id, card_id, card, description, amount, currency, purchase_date, due_date, status, category]
+      properties:
+        id: { type: string, format: uuid }
+        card_id: { type: string, format: uuid }
+        card:
+          type: object
+          required: [id, name, currency]
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+            currency: { type: string }
+        description: { type: string }
+        amount: { $ref: "#/components/schemas/Money" }
+        currency: { type: string, description: La de la tarjeta al comprar }
+        purchase_date: { $ref: "#/components/schemas/LocalDate" }
+        due_date: { $ref: "#/components/schemas/LocalDate" }
+        status: { type: string, enum: [pending, paid] }
+        category: { $ref: "#/components/schemas/Category" }
+    CreditPurchaseResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/CreditPurchase" }
     EntryResponse:
       type: object
       required: [data]
