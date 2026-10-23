@@ -90,7 +90,7 @@ Para probar la app contra el API con las mismas cifras del modo demo, y para las
 
 ## Estado (23 oct 2026)
 
-Revisión final hecha, en revisión del usuario: los 8 repositorios de Android (`Auth`, `Settings`, `Categories`, `Accounts`, `Entries`, `Reports`, `Home`, `Credit`) van contra el API cuando hay `API_BASE_URL`, y el modo demo sigue igual sin ella. Cada plan del 01 al 12 conectó su parte y la probó en el teléfono.
+**Hecho y aprobado.** Revisión final hecha: los 8 repositorios de Android (`Auth`, `Settings`, `Categories`, `Accounts`, `Entries`, `Reports`, `Home`, `Credit`) van contra el API cuando hay `API_BASE_URL`, y el modo demo sigue igual sin ella. Cada plan del 01 al 12 conectó su parte y la probó en el teléfono.
 
 | Pieza de la base común | Estado |
 |---|---|
@@ -103,6 +103,8 @@ Revisión final hecha, en revisión del usuario: los 8 repositorios de Android (
 | Sin conexión y cerrar sesión | Hecho |
 
 Pruebas de Android: 87 pasan (todas con `MockEngine` para los repositorios remotos); `lintDebug` sin avisos nuevos (36, los de antes).
+
+En el teléfono: con la app en Categorías, se creó una categoría desde la computadora con la misma cuenta; al mandar la app al fondo y volver, apareció sola.
 
 ## Desviaciones
 
