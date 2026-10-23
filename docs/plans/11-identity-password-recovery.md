@@ -108,7 +108,7 @@ Ninguna: `RESEND_API_KEY` y `MAIL_FROM` ya existen.
 
 ## Estado (23 oct 2026)
 
-Implementado en API y Android, en revisión. **Falta el criterio de aceptación con un correo real** (Resend), que necesita el API arrancado con `RESEND_API_KEY` y `MAIL_FROM`.
+**Hecho y aprobado.** El criterio de aceptación se cumplió con un correo real: con el API arrancado con `RESEND_API_KEY` y `MAIL_FROM`, el código llegó por Resend a la bandeja de entrada de Gmail del usuario y la recuperación funcionó de principio a fin en el teléfono. (Outlook no se probó: el usuario no lo pidió.)
 
 | Comprobación | Resultado |
 |---|---|
@@ -137,3 +137,4 @@ Implementado en API y Android, en revisión. **Falta el criterio de aceptación 
 - **`CODE_INVALID`** para un código que no son 6 dígitos, y la contraseña nueva se valida en el campo `new_password`.
 - **Las tres rutas usan el límite por IP de inicio de sesión** (`LOGIN_RATE_LIMIT_PER_MINUTE`), además de los 5 intentos por código.
 - **Android**: el paso 2 es la pantalla nueva `ResetCodeScreen` ("Escribe el código", "Continuar", "Pedir otro código"); en modo demo, la ayuda avisa que sirve cualquier código de 6 dígitos.
+- **Android pide la contraseña nueva dos veces** ("Repite la contraseña nueva"); si no coinciden dice "Las contraseñas no coinciden." y no envía nada, así el código no se gasta. Lo pidió el usuario al probar; el API no cambia.
