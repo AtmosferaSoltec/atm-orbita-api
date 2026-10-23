@@ -29,6 +29,7 @@ const (
 	CodeEmailInvalid         = "EMAIL_INVALID"
 	CodePasswordTooShort     = "PASSWORD_TOO_SHORT"
 	CodePasswordTooLong      = "PASSWORD_TOO_LONG"
+	CodePasswordRequired     = "PASSWORD_REQUIRED"
 	CodeCurrencyNotSupported = "CURRENCY_NOT_SUPPORTED"
 	CodeInvalidFormat        = "INVALID_FORMAT"
 )

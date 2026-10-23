@@ -60,11 +60,12 @@ type Deps struct {
 
 // Service son los casos de uso de cuentas y sesiones.
 type Service struct {
-	deps      Deps
-	attempts  *loginAttempts
-	hooks     []RegistrationHook
-	dummyHash string
-	resetKey  []byte
+	deps          Deps
+	attempts      *loginAttempts
+	hooks         []RegistrationHook
+	deletionHooks []DeletionHook
+	dummyHash     string
+	resetKey      []byte
 }
 
 // NewService crea el servicio. Calcula un hash ficticio para que iniciar sesión

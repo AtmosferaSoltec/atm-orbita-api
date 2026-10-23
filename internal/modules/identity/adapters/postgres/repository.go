@@ -200,3 +200,16 @@ func (r Users) SetPassword(ctx context.Context, id uuid.UUID, hash string) error
 func (r Sessions) RevokeAll(ctx context.Context, userID uuid.UUID, reason string) error {
 	return sqlcgen.New(r.db.DB(ctx)).RevokeUserSessions(ctx, sqlcgen.RevokeUserSessionsParams{UserID: userID, RevokedReason: &reason})
 }
+
+// Delete borra al usuario; la cascada se lleva el resto. domain.ErrNotFound si
+// ya no existía.
+func (r Users) Delete(ctx context.Context, id uuid.UUID) error {
+	n, err := r.q(ctx).DeleteUser(ctx, id)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}

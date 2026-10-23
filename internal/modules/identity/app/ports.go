@@ -20,6 +20,8 @@ type Users interface {
 	ByID(ctx context.Context, id uuid.UUID) (domain.User, error)
 	TouchLastLogin(ctx context.Context, id uuid.UUID) error
 	SetPassword(ctx context.Context, id uuid.UUID, hash string) error
+	// Delete borra al usuario y, por cascada, todos sus datos.
+	Delete(ctx context.Context, id uuid.UUID) error
 }
 
 // Session es un dispositivo con sesión abierta.
@@ -98,3 +100,8 @@ type NewUser struct {
 // queda nada. Los módulos lo usan para crear el perfil, las categorías iniciales
 // y la cuenta "Efectivo".
 type RegistrationHook func(ctx context.Context, user NewUser) error
+
+// DeletionHook corre dentro de la transacción de eliminar la cuenta, antes de
+// borrar al usuario: si falla, no se borra nada. Es para lo que la cascada no
+// alcanza (archivos fuera de la base); hoy ningún módulo lo necesita.
+type DeletionHook func(ctx context.Context, userID uuid.UUID) error

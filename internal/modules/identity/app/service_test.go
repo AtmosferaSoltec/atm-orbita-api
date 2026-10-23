@@ -78,6 +78,11 @@ func (f fakeUsers) SetPassword(_ context.Context, id uuid.UUID, hash string) err
 	return nil
 }
 
+func (f fakeUsers) Delete(_ context.Context, id uuid.UUID) error {
+	delete(f.m.users, id)
+	return nil
+}
+
 type fakeSessions struct{ m *memory }
 
 func (f fakeSessions) Create(_ context.Context, s Session) error {

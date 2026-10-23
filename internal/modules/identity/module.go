@@ -1,5 +1,6 @@
 // Package identity son las cuentas de usuario y sus sesiones: registro, inicio
-// y cierre de sesión, renovación y la autenticación de cada petición.
+// y cierre de sesión, renovación, recuperar la contraseña, eliminar la cuenta y
+// la autenticación de cada petición.
 //
 // Es la API pública del módulo: los demás módulos y main solo usan lo de aquí.
 package identity
@@ -26,6 +27,10 @@ type NewUser = app.NewUser
 
 // RegistrationHook corre dentro de la transacción del registro.
 type RegistrationHook = app.RegistrationHook
+
+// DeletionHook corre dentro de la transacción de eliminar la cuenta, antes del
+// borrado.
+type DeletionHook = app.DeletionHook
 
 // PasswordParams son los parámetros de argon2id.
 type PasswordParams = security.Argon2Params
@@ -91,6 +96,10 @@ func (m *Module) Authenticator() auth.Authenticator { return m.service }
 
 // OnUserRegistered agrega un gancho al alta (perfil, categorías, cuenta "Efectivo").
 func (m *Module) OnUserRegistered(hook RegistrationHook) { m.service.OnUserRegistered(hook) }
+
+// OnUserDeleted agrega un gancho a la eliminación de la cuenta, para lo que la
+// cascada de la base no alcanza.
+func (m *Module) OnUserDeleted(hook DeletionHook) { m.service.OnUserDeleted(hook) }
 
 // resetMailer arma los correos de la recuperación y los deja en el Mailer.
 type resetMailer struct{ mailer mail.Mailer }

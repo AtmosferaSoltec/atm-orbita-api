@@ -253,6 +253,33 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
+    delete:
+      summary: Eliminar la cuenta y todos sus datos
+      description: |
+        Borrado real, sin papelera ni periodo de gracia (plan 12). Pide la contraseña
+        aunque el token sea válido. Se borran el usuario y, por cascada, todos sus
+        datos y sesiones: el token de acceso deja de servir al instante y el correo
+        queda libre para registrarse otra vez. Cinco contraseñas equivocadas seguidas
+        hacen esperar, como en el inicio de sesión.
+      operationId: deleteMe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, description: "La contraseña actual" }
+      responses:
+        "204": { description: "Cuenta eliminada" }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "401":
+          description: "`INVALID_CREDENTIALS` (contraseña equivocada) o `UNAUTHORIZED` (token)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
 
   /currencies:
     get:

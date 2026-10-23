@@ -117,6 +117,19 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
 	return err
 }
 
+const deleteUser = `-- name: DeleteUser :execrows
+DELETE FROM users WHERE id = $1
+`
+
+// La cascada se lleva todo lo del usuario (plan 12).
+func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteUser, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const discardResetCodes = `-- name: DiscardResetCodes :exec
 UPDATE password_reset_codes SET used_at = $2 WHERE user_id = $1 AND used_at IS NULL
 `

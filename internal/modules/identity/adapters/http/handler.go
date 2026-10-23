@@ -29,6 +29,7 @@ type Service interface {
 	RequestPasswordReset(ctx context.Context, email string) error
 	VerifyResetCode(ctx context.Context, email, code string) error
 	ResetPassword(ctx context.Context, email, code, newPassword string) error
+	DeleteAccount(ctx context.Context, userID uuid.UUID, password string) error
 }
 
 // Códigos propios del módulo.
@@ -66,6 +67,7 @@ func (h *Handler) Routes(public, limited, protected gin.IRoutes) {
 	limited.POST("/auth/reset-password", h.resetPassword)
 	public.POST("/auth/logout", h.logout)
 	protected.GET("/me", h.me)
+	protected.DELETE("/me", h.deleteAccount)
 }
 
 type registerRequest struct {
@@ -263,6 +265,24 @@ func (h *Handler) resetPassword(c *gin.Context) {
 		return
 	}
 	if err := h.service.ResetPassword(c.Request.Context(), req.Email, req.Code, req.NewPassword); err != nil {
+		respondError(c, err)
+		return
+	}
+	apierror.NoContent(c)
+}
+
+type deleteAccountRequest struct {
+	Password string `json:"password"`
+}
+
+// deleteAccount borra la cuenta y todos sus datos; las sesiones se van con ella.
+func (h *Handler) deleteAccount(c *gin.Context) {
+	var req deleteAccountRequest
+	if !bind(c, &req) {
+		return
+	}
+	principal, _ := auth.FromContext(c.Request.Context())
+	if err := h.service.DeleteAccount(c.Request.Context(), principal.UserID, req.Password); err != nil {
 		respondError(c, err)
 		return
 	}

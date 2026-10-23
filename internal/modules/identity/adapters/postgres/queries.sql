@@ -82,3 +82,7 @@ UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1;
 -- name: RevokeUserSessions :exec
 UPDATE sessions SET revoked_at = now(), revoked_reason = $2
 WHERE user_id = $1 AND revoked_at IS NULL;
+
+-- La cascada se lleva todo lo del usuario (plan 12).
+-- name: DeleteUser :execrows
+DELETE FROM users WHERE id = $1;
