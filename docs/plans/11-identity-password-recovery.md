@@ -106,6 +106,34 @@ Integración (con un `Mailer` que captura los correos):
 
 Ninguna: `RESEND_API_KEY` y `MAIL_FROM` ya existen.
 
+## Estado (23 oct 2026)
+
+Implementado en API y Android, en revisión. **Falta el criterio de aceptación con un correo real** (Resend), que necesita el API arrancado con `RESEND_API_KEY` y `MAIL_FROM`.
+
+| Comprobación | Resultado |
+|---|---|
+| `gofmt`, `go vet`, `golangci-lint run`, `go build` | Sin problemas (`0 issues`) |
+| `go test ./...` sin base / contra el Postgres local | Pasa. Correo (3): los dos correos llevan el código (o el aviso) en HTML y en texto; Resend recibe la clave, el remitente y el destinatario, y un error se informa; la cola reintenta (2 fallos y sale) y se rinde tras 3. Integración por HTTP (6), con un `Mailer` que captura: de principio a fin (correo con 6 dígitos, la base guarda solo el HMAC de 32 bytes, verificar no consume, contraseña de 7 → 400 sin consumir, cambio → 204, la nueva sirve y la vieja no, sesiones y renovación anteriores cortadas, reusar → 422, llega "se cambió"); correo inexistente → 204 sin correo; formatos → `EMAIL_INVALID` y `CODE_INVALID`; pedir otro invalida el anterior; vencido a los 16 minutos → 422; 5 fallos y luego el correcto → 422; dos cambios simultáneos → un 204 y un 422; el cuarto pedido del día no envía y al día siguiente sí |
+| Migración `00010`: `down` y `up` | Funciona |
+| OpenAPI | Válido (Redocly) |
+| Android: pruebas, `lintDebug`, `installDebug` | 84 pruebas pasan; ningún aviso nuevo de lint |
+
+**En el teléfono** (API real + Postgres local, sin `RESEND_API_KEY`: el correo y su código quedan en el log):
+
+| Prueba | Resultado |
+|---|---|
+| "¿Olvidaste tu contraseña?" con `cats03@prueba.com` | "Escribe el código" con "Si cats03@prueba.com tiene una cuenta, te enviamos un código de 6 dígitos. Vence en 15 minutos." |
+| Un código incorrecto | "El código no es válido o ya venció. Pide uno nuevo." |
+| El código del correo | Lleva a "Crea una contraseña nueva" |
+| Guardar la contraseña nueva | Vuelve a Iniciar sesión con "Tu contraseña se cambió. Inicia sesión con la nueva."; entrar con la nueva funciona |
+
 ## Desviaciones
 
 - Código de 6 dígitos en lugar del enlace que decía la guía §8 (decisión del usuario, 21 oct 2026). La guía ya está actualizada.
+- **Las plantillas MJML se compilan una vez, no en cada build**: en el repo están la fuente (`.mjml`) y el HTML compilado (`.html`, que se embebe con `go:embed`), con el comando para recompilar en `internal/integrations/mail/templates/README.md`. Compilar en el build habría puesto Node en el Dockerfile, que no se toca.
+- **"Tarda lo mismo exista o no el correo"**: `forgot-password` responde 204 enseguida y hace todo (buscar al usuario, guardar el código y encolar el correo) en segundo plano.
+- **La cola de correo vive en el proceso** (hasta 100 en espera, 4 intentos con espera de 2, 4 y 8 s); al apagar el API espera hasta 10 s a los pendientes. Un correo que no sale tras los reintentos se registra sin su contenido.
+- **El hash del código lleva también el id del usuario** (HMAC-SHA256 con una clave derivada de `JWT_ACCESS_SECRET`): el mismo código de dos personas da hashes distintos.
+- **`CODE_INVALID`** para un código que no son 6 dígitos, y la contraseña nueva se valida en el campo `new_password`.
+- **Las tres rutas usan el límite por IP de inicio de sesión** (`LOGIN_RATE_LIMIT_PER_MINUTE`), además de los 5 intentos por código.
+- **Android**: el paso 2 es la pantalla nueva `ResetCodeScreen` ("Escribe el código", "Continuar", "Pedir otro código"); en modo demo, la ayuda avisa que sirve cualquier código de 6 dígitos.
