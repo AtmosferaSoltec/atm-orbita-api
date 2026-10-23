@@ -21,6 +21,7 @@ import (
 	_ "time/tzdata"
 
 	"github.com/AtmosferaSoltec/atm-orbita-api/db"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/integrations/mail"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/credit"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/home"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity"
@@ -89,6 +90,19 @@ func run() int {
 	}
 	health.Register(api, pool)
 
+	// Con RESEND_API_KEY los correos salen por Resend; sin ella (desarrollo), al
+	// log. Siempre en segundo plano, con reintentos.
+	var mailer mail.Mailer = mail.Console{Log: log}
+	if cfg.Mail.ResendAPIKey != "" {
+		mailer = mail.Resend{APIKey: cfg.Mail.ResendAPIKey, From: cfg.Mail.From}
+	}
+	mailQueue := mail.NewQueue(mailer, log, 4, 2*time.Second)
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		mailQueue.Close(closeCtx)
+	}()
+
 	runner := tx.NewRunner(pool)
 	identityModule, err := identity.New(identity.Deps{
 		Tx:              runner,
@@ -96,6 +110,7 @@ func run() int {
 		JWTSecret:       cfg.JWTAccessSecret,
 		AccessTokenTTL:  cfg.AccessTokenTTL,
 		RefreshTokenTTL: cfg.RefreshTokenTTL,
+		Mailer:          mailQueue,
 	})
 	if err != nil {
 		log.Error("modules", "error", err)
