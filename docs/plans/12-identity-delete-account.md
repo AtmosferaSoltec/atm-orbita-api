@@ -75,7 +75,7 @@ Ninguna.
 
 ## Estado (23 oct 2026)
 
-Implementado en API y Android, en revisión: falta la prueba en el teléfono.
+**Hecho y aprobado.** Probado en el teléfono por el usuario contra el API local. La página web para eliminar la cuenta sin la app sigue pendiente (decisión P2: se verá después, antes de publicar en Google Play).
 
 | Comprobación | Resultado |
 |---|---|
