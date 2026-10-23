@@ -71,6 +71,13 @@ func (f fakeUsers) ByID(_ context.Context, id uuid.UUID) (domain.User, error) {
 
 func (fakeUsers) TouchLastLogin(context.Context, uuid.UUID) error { return nil }
 
+func (f fakeUsers) SetPassword(_ context.Context, id uuid.UUID, hash string) error {
+	u := f.m.users[id]
+	u.PasswordHash = hash
+	f.m.users[id] = u
+	return nil
+}
+
 type fakeSessions struct{ m *memory }
 
 func (f fakeSessions) Create(_ context.Context, s Session) error {
@@ -91,6 +98,15 @@ func (f fakeSessions) Revoke(_ context.Context, id uuid.UUID, reason string) err
 }
 
 func (fakeSessions) Touch(context.Context, uuid.UUID) error { return nil }
+
+func (f fakeSessions) RevokeAll(_ context.Context, userID uuid.UUID, reason string) error {
+	for _, s := range f.m.sessions {
+		if s.UserID == userID && s.revoked == "" {
+			s.revoked = reason
+		}
+	}
+	return nil
+}
 
 func (f fakeSessions) CreateRefreshToken(_ context.Context, t RefreshToken) error {
 	f.m.tokens = append(f.m.tokens, &fakeToken{RefreshToken: t})

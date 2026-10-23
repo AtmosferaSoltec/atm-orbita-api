@@ -1,5 +1,6 @@
 // Package mail envía correos detrás de un puerto, para poder cambiar de
-// proveedor sin tocar los módulos. Resend llega con el plan 11.
+// proveedor sin tocar los módulos: Resend en producción, Console en desarrollo
+// (el correo se lee en el log), y Queue para enviar en segundo plano.
 package mail
 
 import (

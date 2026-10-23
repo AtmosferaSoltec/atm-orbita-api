@@ -5,11 +5,13 @@
 package identity
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/integrations/mail"
 	identityhttp "github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity/adapters/http"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity/adapters/postgres"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity/adapters/security"
@@ -41,6 +43,11 @@ type Deps struct {
 	RefreshTokenTTL time.Duration
 	// PasswordParams permite bajar el costo de argon2 en pruebas; vacío usa el de producción.
 	PasswordParams *PasswordParams
+	// Mailer envía los correos de recuperar la contraseña (en segundo plano).
+	Mailer mail.Mailer
+	// Background corre trabajo fuera de la petición; vacío usa una goroutine. Las
+	// pruebas lo hacen síncrono.
+	Background func(func())
 }
 
 // Module arma el módulo con sus adaptadores.
@@ -56,13 +63,17 @@ func New(deps Deps) (*Module, error) {
 		params = *deps.PasswordParams
 	}
 	service, err := app.NewService(app.Deps{
-		Users:    postgres.NewUsers(deps.Tx),
-		Sessions: postgres.NewSessions(deps.Tx),
-		Hasher:   security.Argon2Hasher{Params: params},
-		Tokens:   security.JWTTokens{Secret: []byte(deps.JWTSecret), TTL: deps.AccessTokenTTL},
-		Tx:       deps.Tx,
-		Clock:    deps.Clock,
-		Config:   app.Config{AccessTokenTTL: deps.AccessTokenTTL, RefreshTokenTTL: deps.RefreshTokenTTL},
+		Users:       postgres.NewUsers(deps.Tx),
+		Sessions:    postgres.NewSessions(deps.Tx),
+		ResetCodes:  postgres.NewResetCodes(deps.Tx),
+		Hasher:      security.Argon2Hasher{Params: params},
+		Tokens:      security.JWTTokens{Secret: []byte(deps.JWTSecret), TTL: deps.AccessTokenTTL},
+		Mailer:      resetMailer{deps.Mailer},
+		Tx:          deps.Tx,
+		Clock:       deps.Clock,
+		Config:      app.Config{AccessTokenTTL: deps.AccessTokenTTL, RefreshTokenTTL: deps.RefreshTokenTTL},
+		ResetSecret: []byte(deps.JWTSecret),
+		Background:  deps.Background,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("identity: %w", err)
@@ -80,3 +91,22 @@ func (m *Module) Authenticator() auth.Authenticator { return m.service }
 
 // OnUserRegistered agrega un gancho al alta (perfil, categorías, cuenta "Efectivo").
 func (m *Module) OnUserRegistered(hook RegistrationHook) { m.service.OnUserRegistered(hook) }
+
+// resetMailer arma los correos de la recuperación y los deja en el Mailer.
+type resetMailer struct{ mailer mail.Mailer }
+
+func (m resetMailer) SendResetCode(ctx context.Context, to, code string, validFor time.Duration) error {
+	message, err := mail.ResetCodeMessage(to, code, validFor)
+	if err != nil {
+		return err
+	}
+	return m.mailer.Send(ctx, message)
+}
+
+func (m resetMailer) SendPasswordChanged(ctx context.Context, to string) error {
+	message, err := mail.PasswordChangedMessage(to)
+	if err != nil {
+		return err
+	}
+	return m.mailer.Send(ctx, message)
+}

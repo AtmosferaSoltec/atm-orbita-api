@@ -19,6 +19,7 @@ type Users interface {
 	ByEmail(ctx context.Context, email string) (domain.User, error)
 	ByID(ctx context.Context, id uuid.UUID) (domain.User, error)
 	TouchLastLogin(ctx context.Context, id uuid.UUID) error
+	SetPassword(ctx context.Context, id uuid.UUID, hash string) error
 }
 
 // Session es un dispositivo con sesión abierta.
@@ -57,6 +58,8 @@ type Sessions interface {
 	// domain.ErrNotFound si el hash no existe.
 	LockRefreshToken(ctx context.Context, hash []byte) (LockedRefreshToken, error)
 	MarkRefreshTokenUsed(ctx context.Context, id uuid.UUID) error
+	// RevokeAll cierra todas las sesiones del usuario.
+	RevokeAll(ctx context.Context, userID uuid.UUID, reason string) error
 }
 
 // PasswordHasher calcula y comprueba hashes de contraseña.

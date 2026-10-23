@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/integrations/mail"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/auth"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/clock"
@@ -35,6 +36,8 @@ type harness struct {
 	router *gin.Engine
 	pool   *pgxpool.Pool
 	module *identity.Module
+	mailer *captureMailer
+	clock  *movableClock
 }
 
 func newHarness(t *testing.T, loginPerMinute int) *harness {
@@ -46,15 +49,18 @@ func newHarness(t *testing.T, loginPerMinute int) *harness {
 		RateLimitPerMinute: 10_000,
 	})
 	require.NoError(t, err)
+	mailer := &captureMailer{}
+	now := &movableClock{at: time.Now()}
 	module, err := identity.New(identity.Deps{
-		Tx: tx.NewRunner(pool), Clock: clock.System{}, JWTSecret: strings.Repeat("k", 64),
+		Tx: tx.NewRunner(pool), Clock: now, JWTSecret: strings.Repeat("k", 64),
 		AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 30 * 24 * time.Hour, PasswordParams: &identity.FastPasswordParams,
+		Mailer: mailer, Background: func(work func()) { work() },
 	})
 	require.NoError(t, err)
 	limited := api.Group("", middleware.NewRateLimiter(loginPerMinute).Middleware())
 	protected := api.Group("", auth.Require(module.Authenticator()))
 	module.Routes(api, limited, protected)
-	return &harness{router: router, pool: pool, module: module}
+	return &harness{router: router, pool: pool, module: module, mailer: mailer, clock: now}
 }
 
 type response struct {
@@ -267,3 +273,42 @@ func TestTheSixthLoginInAMinuteIsLimited(t *testing.T) {
 	assert.Equal(t, http.StatusTooManyRequests, res.status)
 	assert.NotEmpty(t, res.header.Get("Retry-After"))
 }
+
+// captureMailer guarda los correos en lugar de enviarlos.
+type captureMailer struct {
+	mu   sync.Mutex
+	sent []mail.Message
+}
+
+func (c *captureMailer) Send(_ context.Context, m mail.Message) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.sent = append(c.sent, m)
+	return nil
+}
+
+func (c *captureMailer) all() []mail.Message {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]mail.Message(nil), c.sent...)
+}
+
+// movableClock es el reloj real que una prueba puede adelantar.
+type movableClock struct {
+	mu sync.Mutex
+	at time.Time
+}
+
+func (c *movableClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.at
+}
+
+func (c *movableClock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.at = c.at.Add(d)
+}
+
+var _ clock.Clock = (*movableClock)(nil)

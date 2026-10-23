@@ -39,6 +39,7 @@ sql:
   - engine: postgresql
     schema:
       - migrations/00001_identity_create_users_and_sessions.sql
+      - migrations/00010_identity_create_password_reset_codes.sql
     queries: ../internal/modules/identity/adapters/postgres/queries.sql
     gen:
       go:

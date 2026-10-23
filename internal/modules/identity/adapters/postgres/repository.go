@@ -5,6 +5,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -139,4 +140,63 @@ func (r Sessions) LockRefreshToken(ctx context.Context, hash []byte) (app.Locked
 // MarkRefreshTokenUsed marca el token como usado (rotación).
 func (r Sessions) MarkRefreshTokenUsed(ctx context.Context, id uuid.UUID) error {
 	return r.q(ctx).MarkRefreshTokenUsed(ctx, id)
+}
+
+// ResetCodes implementa app.ResetCodes.
+type ResetCodes struct {
+	db DB
+}
+
+// NewResetCodes crea el repositorio.
+func NewResetCodes(db DB) ResetCodes { return ResetCodes{db: db} }
+
+func (r ResetCodes) q(ctx context.Context) *sqlcgen.Queries { return sqlcgen.New(r.db.DB(ctx)) }
+
+// CountSince cuenta los códigos pedidos por el usuario desde since.
+func (r ResetCodes) CountSince(ctx context.Context, userID uuid.UUID, since time.Time) (int64, error) {
+	return r.q(ctx).CountResetCodesSince(ctx, sqlcgen.CountResetCodesSinceParams{UserID: userID, CreatedAt: since})
+}
+
+// Replace deja sin efecto los códigos pendientes del usuario y guarda el nuevo.
+func (r ResetCodes) Replace(ctx context.Context, code app.ResetCode) error {
+	q := r.q(ctx)
+	if err := q.DiscardResetCodes(ctx, sqlcgen.DiscardResetCodesParams{UserID: code.UserID, UsedAt: &code.CreatedAt}); err != nil {
+		return err
+	}
+	return q.CreateResetCode(ctx, sqlcgen.CreateResetCodeParams{
+		ID: code.ID, UserID: code.UserID, CodeHash: code.Hash, ExpiresAt: code.ExpiresAt, CreatedAt: code.CreatedAt,
+	})
+}
+
+// LockActive bloquea el código vigente del usuario; domain.ErrNotFound si no hay.
+func (r ResetCodes) LockActive(ctx context.Context, userID uuid.UUID) (app.ResetCode, error) {
+	row, err := r.q(ctx).LockActiveResetCode(ctx, userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return app.ResetCode{}, domain.ErrNotFound
+	}
+	if err != nil {
+		return app.ResetCode{}, err
+	}
+	return app.ResetCode{ID: row.ID, UserID: userID, Hash: row.CodeHash, ExpiresAt: row.ExpiresAt, Attempts: int(row.Attempts)}, nil
+}
+
+// AddAttempt suma un intento fallido.
+func (r ResetCodes) AddAttempt(ctx context.Context, id uuid.UUID) error {
+	return r.q(ctx).AddResetCodeAttempt(ctx, id)
+}
+
+// Use marca el código usado si sigue vigente; ok es false si ya no servía.
+func (r ResetCodes) Use(ctx context.Context, id uuid.UUID, now time.Time) (bool, error) {
+	n, err := r.q(ctx).UseResetCode(ctx, sqlcgen.UseResetCodeParams{ID: id, Now: &now})
+	return n == 1, err
+}
+
+// SetPassword guarda el hash de la contraseña nueva.
+func (r Users) SetPassword(ctx context.Context, id uuid.UUID, hash string) error {
+	return sqlcgen.New(r.db.DB(ctx)).UpdatePassword(ctx, sqlcgen.UpdatePasswordParams{ID: id, PasswordHash: hash})
+}
+
+// RevokeAll cierra todas las sesiones del usuario.
+func (r Sessions) RevokeAll(ctx context.Context, userID uuid.UUID, reason string) error {
+	return sqlcgen.New(r.db.DB(ctx)).RevokeUserSessions(ctx, sqlcgen.RevokeUserSessionsParams{UserID: userID, RevokedReason: &reason})
 }

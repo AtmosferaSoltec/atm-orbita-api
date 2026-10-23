@@ -12,6 +12,33 @@ import (
 	"github.com/google/uuid"
 )
 
+const addResetCodeAttempt = `-- name: AddResetCodeAttempt :exec
+UPDATE password_reset_codes SET attempts = attempts + 1 WHERE id = $1
+`
+
+func (q *Queries) AddResetCodeAttempt(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, addResetCodeAttempt, id)
+	return err
+}
+
+const countResetCodesSince = `-- name: CountResetCodesSince :one
+
+SELECT count(*) FROM password_reset_codes WHERE user_id = $1 AND created_at > $2
+`
+
+type CountResetCodesSinceParams struct {
+	UserID    uuid.UUID
+	CreatedAt time.Time
+}
+
+// Plan 11: recuperar la contraseña.
+func (q *Queries) CountResetCodesSince(ctx context.Context, arg CountResetCodesSinceParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countResetCodesSince, arg.UserID, arg.CreatedAt)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createRefreshToken = `-- name: CreateRefreshToken :exec
 INSERT INTO refresh_tokens (id, session_id, token_hash, expires_at)
 VALUES ($1, $2, $3, $4)
@@ -30,6 +57,30 @@ func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshToken
 		arg.SessionID,
 		arg.TokenHash,
 		arg.ExpiresAt,
+	)
+	return err
+}
+
+const createResetCode = `-- name: CreateResetCode :exec
+INSERT INTO password_reset_codes (id, user_id, code_hash, expires_at, created_at)
+VALUES ($1, $2, $3, $4, $5)
+`
+
+type CreateResetCodeParams struct {
+	ID        uuid.UUID
+	UserID    uuid.UUID
+	CodeHash  []byte
+	ExpiresAt time.Time
+	CreatedAt time.Time
+}
+
+func (q *Queries) CreateResetCode(ctx context.Context, arg CreateResetCodeParams) error {
+	_, err := q.db.Exec(ctx, createResetCode,
+		arg.ID,
+		arg.UserID,
+		arg.CodeHash,
+		arg.ExpiresAt,
+		arg.CreatedAt,
 	)
 	return err
 }
@@ -63,6 +114,21 @@ type CreateUserParams struct {
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
 	_, err := q.db.Exec(ctx, createUser, arg.ID, arg.Email, arg.PasswordHash)
+	return err
+}
+
+const discardResetCodes = `-- name: DiscardResetCodes :exec
+UPDATE password_reset_codes SET used_at = $2 WHERE user_id = $1 AND used_at IS NULL
+`
+
+type DiscardResetCodesParams struct {
+	UserID uuid.UUID
+	UsedAt *time.Time
+}
+
+// Un código nuevo deja sin efecto los anteriores.
+func (q *Queries) DiscardResetCodes(ctx context.Context, arg DiscardResetCodesParams) error {
+	_, err := q.db.Exec(ctx, discardResetCodes, arg.UserID, arg.UsedAt)
 	return err
 }
 
@@ -134,6 +200,36 @@ func (q *Queries) IsSessionActive(ctx context.Context, arg IsSessionActiveParams
 	return exists, err
 }
 
+const lockActiveResetCode = `-- name: LockActiveResetCode :one
+SELECT id, code_hash, expires_at, attempts
+FROM password_reset_codes
+WHERE user_id = $1 AND used_at IS NULL
+ORDER BY created_at DESC
+LIMIT 1
+FOR UPDATE
+`
+
+type LockActiveResetCodeRow struct {
+	ID        uuid.UUID
+	CodeHash  []byte
+	ExpiresAt time.Time
+	Attempts  int16
+}
+
+// El código vigente del usuario, bloqueado hasta el fin de la transacción: de
+// dos cambios de contraseña simultáneos, el segundo lo encuentra usado.
+func (q *Queries) LockActiveResetCode(ctx context.Context, userID uuid.UUID) (LockActiveResetCodeRow, error) {
+	row := q.db.QueryRow(ctx, lockActiveResetCode, userID)
+	var i LockActiveResetCodeRow
+	err := row.Scan(
+		&i.ID,
+		&i.CodeHash,
+		&i.ExpiresAt,
+		&i.Attempts,
+	)
+	return i, err
+}
+
 const lockRefreshToken = `-- name: LockRefreshToken :one
 SELECT r.id, r.session_id, r.expires_at, r.used_at, s.user_id, s.revoked_at AS session_revoked_at
 FROM refresh_tokens r
@@ -190,6 +286,21 @@ func (q *Queries) RevokeSession(ctx context.Context, arg RevokeSessionParams) er
 	return err
 }
 
+const revokeUserSessions = `-- name: RevokeUserSessions :exec
+UPDATE sessions SET revoked_at = now(), revoked_reason = $2
+WHERE user_id = $1 AND revoked_at IS NULL
+`
+
+type RevokeUserSessionsParams struct {
+	UserID        uuid.UUID
+	RevokedReason *string
+}
+
+func (q *Queries) RevokeUserSessions(ctx context.Context, arg RevokeUserSessionsParams) error {
+	_, err := q.db.Exec(ctx, revokeUserSessions, arg.UserID, arg.RevokedReason)
+	return err
+}
+
 const touchLastLogin = `-- name: TouchLastLogin :exec
 UPDATE users SET last_login_at = now(), updated_at = now() WHERE id = $1
 `
@@ -206,4 +317,36 @@ UPDATE sessions SET last_used_at = now() WHERE id = $1
 func (q *Queries) TouchSession(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, touchSession, id)
 	return err
+}
+
+const updatePassword = `-- name: UpdatePassword :exec
+UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1
+`
+
+type UpdatePasswordParams struct {
+	ID           uuid.UUID
+	PasswordHash string
+}
+
+func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) error {
+	_, err := q.db.Exec(ctx, updatePassword, arg.ID, arg.PasswordHash)
+	return err
+}
+
+const useResetCode = `-- name: UseResetCode :execrows
+UPDATE password_reset_codes SET used_at = $1
+WHERE id = $2 AND used_at IS NULL AND expires_at > $1 AND attempts < 5
+`
+
+type UseResetCodeParams struct {
+	Now *time.Time
+	ID  uuid.UUID
+}
+
+func (q *Queries) UseResetCode(ctx context.Context, arg UseResetCodeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, useResetCode, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

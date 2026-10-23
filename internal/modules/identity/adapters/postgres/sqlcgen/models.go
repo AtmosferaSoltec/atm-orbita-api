@@ -10,6 +10,16 @@ import (
 	"github.com/google/uuid"
 )
 
+type PasswordResetCode struct {
+	ID        uuid.UUID
+	UserID    uuid.UUID
+	CodeHash  []byte
+	ExpiresAt time.Time
+	Attempts  int16
+	UsedAt    *time.Time
+	CreatedAt time.Time
+}
+
 type RefreshToken struct {
 	ID        uuid.UUID
 	SessionID uuid.UUID

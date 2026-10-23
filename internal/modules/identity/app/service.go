@@ -43,13 +43,19 @@ type Config struct {
 
 // Deps son los puertos que necesita el servicio.
 type Deps struct {
-	Users    Users
-	Sessions Sessions
-	Hasher   PasswordHasher
-	Tokens   AccessTokens
-	Tx       Transactor
-	Clock    clock.Clock
-	Config   Config
+	Users      Users
+	Sessions   Sessions
+	ResetCodes ResetCodes
+	Hasher     PasswordHasher
+	Tokens     AccessTokens
+	Mailer     ResetMailer
+	Tx         Transactor
+	Clock      clock.Clock
+	Config     Config
+	// ResetSecret es la clave de la que sale la del hash de los códigos (JWT_ACCESS_SECRET).
+	ResetSecret []byte
+	// Background corre trabajo fuera de la petición; vacío usa una goroutine.
+	Background func(func())
 }
 
 // Service son los casos de uso de cuentas y sesiones.
@@ -58,6 +64,7 @@ type Service struct {
 	attempts  *loginAttempts
 	hooks     []RegistrationHook
 	dummyHash string
+	resetKey  []byte
 }
 
 // NewService crea el servicio. Calcula un hash ficticio para que iniciar sesión
@@ -67,7 +74,10 @@ func NewService(deps Deps) (*Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("compute dummy hash: %w", err)
 	}
-	return &Service{deps: deps, attempts: newLoginAttempts(), dummyHash: dummy}, nil
+	if deps.Background == nil {
+		deps.Background = func(work func()) { go work() }
+	}
+	return &Service{deps: deps, attempts: newLoginAttempts(), dummyHash: dummy, resetKey: deriveResetKey(deps.ResetSecret)}, nil
 }
 
 // OnUserRegistered agrega un gancho al alta. Corren en el orden en que se agregan.

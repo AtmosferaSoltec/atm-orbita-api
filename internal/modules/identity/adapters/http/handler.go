@@ -26,6 +26,9 @@ type Service interface {
 	Refresh(ctx context.Context, refreshToken string) (app.Tokens, error)
 	Logout(ctx context.Context, refreshToken string) error
 	Me(ctx context.Context, userID uuid.UUID) (domain.User, error)
+	RequestPasswordReset(ctx context.Context, email string) error
+	VerifyResetCode(ctx context.Context, email, code string) error
+	ResetPassword(ctx context.Context, email, code, newPassword string) error
 }
 
 // Códigos propios del módulo.
@@ -33,12 +36,14 @@ const (
 	codeEmailAlreadyRegistered = "EMAIL_ALREADY_REGISTERED"
 	codeInvalidCredentials     = "INVALID_CREDENTIALS"
 	codeSessionExpired         = "SESSION_EXPIRED"
+	codeResetCodeInvalid       = "RESET_CODE_INVALID"
 )
 
 var (
 	errEmailTaken         = apierror.New(http.StatusConflict, codeEmailAlreadyRegistered, "Ese correo ya tiene una cuenta. Inicia sesión.")
 	errInvalidCredentials = apierror.New(http.StatusUnauthorized, codeInvalidCredentials, "Correo o contraseña incorrectos.")
 	errSessionExpired     = apierror.New(http.StatusUnauthorized, codeSessionExpired, "Tu sesión terminó. Inicia sesión de nuevo.")
+	errResetCodeInvalid   = apierror.New(http.StatusUnprocessableEntity, codeResetCodeInvalid, "El código no es válido o ya venció. Pide uno nuevo.")
 )
 
 // Handler atiende las rutas de autenticación.
@@ -55,6 +60,10 @@ func (h *Handler) Routes(public, limited, protected gin.IRoutes) {
 	limited.POST("/auth/register", h.register)
 	limited.POST("/auth/login", h.login)
 	limited.POST("/auth/refresh", h.refresh)
+	// Recuperar la contraseña (plan 11): el mismo límite por IP que el inicio de sesión.
+	limited.POST("/auth/forgot-password", h.forgotPassword)
+	limited.POST("/auth/verify-reset-code", h.verifyResetCode)
+	limited.POST("/auth/reset-password", h.resetPassword)
 	public.POST("/auth/logout", h.logout)
 	protected.GET("/me", h.me)
 }
@@ -192,6 +201,8 @@ func respondError(c *gin.Context, err error) {
 		apierror.Respond(c, errInvalidCredentials)
 	case errors.Is(err, domain.ErrSessionExpired):
 		apierror.Respond(c, errSessionExpired)
+	case errors.Is(err, domain.ErrResetCodeInvalid):
+		apierror.Respond(c, errResetCodeInvalid)
 	case errors.Is(err, domain.ErrNotFound):
 		apierror.Respond(c, apierror.ErrUnauthorized)
 	default:
@@ -213,4 +224,47 @@ func toTokens(tokens app.Tokens) tokensResponse {
 		AccessTokenExpiresIn: int(tokens.ExpiresIn.Seconds()),
 		RefreshToken:         tokens.RefreshToken,
 	}
+}
+
+type resetRequest struct {
+	Email       string `json:"email"`
+	Code        string `json:"code"`
+	NewPassword string `json:"new_password"`
+}
+
+// forgotPassword responde 204 siempre, exista o no el correo.
+func (h *Handler) forgotPassword(c *gin.Context) {
+	var req resetRequest
+	if !bind(c, &req) {
+		return
+	}
+	if err := h.service.RequestPasswordReset(c.Request.Context(), req.Email); err != nil {
+		respondError(c, err)
+		return
+	}
+	apierror.NoContent(c)
+}
+
+func (h *Handler) verifyResetCode(c *gin.Context) {
+	var req resetRequest
+	if !bind(c, &req) {
+		return
+	}
+	if err := h.service.VerifyResetCode(c.Request.Context(), req.Email, req.Code); err != nil {
+		respondError(c, err)
+		return
+	}
+	apierror.NoContent(c)
+}
+
+func (h *Handler) resetPassword(c *gin.Context) {
+	var req resetRequest
+	if !bind(c, &req) {
+		return
+	}
+	if err := h.service.ResetPassword(c.Request.Context(), req.Email, req.Code, req.NewPassword); err != nil {
+		respondError(c, err)
+		return
+	}
+	apierror.NoContent(c)
 }

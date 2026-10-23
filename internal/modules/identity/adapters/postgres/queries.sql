@@ -45,3 +45,40 @@ FOR UPDATE OF r;
 
 -- name: MarkRefreshTokenUsed :exec
 UPDATE refresh_tokens SET used_at = now() WHERE id = $1;
+
+-- Plan 11: recuperar la contraseña.
+
+-- name: CountResetCodesSince :one
+SELECT count(*) FROM password_reset_codes WHERE user_id = $1 AND created_at > $2;
+
+-- name: DiscardResetCodes :exec
+-- Un código nuevo deja sin efecto los anteriores.
+UPDATE password_reset_codes SET used_at = $2 WHERE user_id = $1 AND used_at IS NULL;
+
+-- name: CreateResetCode :exec
+INSERT INTO password_reset_codes (id, user_id, code_hash, expires_at, created_at)
+VALUES ($1, $2, $3, $4, $5);
+
+-- name: LockActiveResetCode :one
+-- El código vigente del usuario, bloqueado hasta el fin de la transacción: de
+-- dos cambios de contraseña simultáneos, el segundo lo encuentra usado.
+SELECT id, code_hash, expires_at, attempts
+FROM password_reset_codes
+WHERE user_id = $1 AND used_at IS NULL
+ORDER BY created_at DESC
+LIMIT 1
+FOR UPDATE;
+
+-- name: AddResetCodeAttempt :exec
+UPDATE password_reset_codes SET attempts = attempts + 1 WHERE id = $1;
+
+-- name: UseResetCode :execrows
+UPDATE password_reset_codes SET used_at = sqlc.arg(now)
+WHERE id = sqlc.arg(id) AND used_at IS NULL AND expires_at > sqlc.arg(now) AND attempts < 5;
+
+-- name: UpdatePassword :exec
+UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1;
+
+-- name: RevokeUserSessions :exec
+UPDATE sessions SET revoked_at = now(), revoked_reason = $2
+WHERE user_id = $1 AND revoked_at IS NULL;
