@@ -88,6 +88,27 @@ Para probar la app contra el API con las mismas cifras del modo demo, y para las
 - Repositorios remotos con un servidor HTTP simulado (Ktor MockEngine): mapeo de DTO, traducción de errores, renovación única con 5 peticiones simultáneas y el token vencido.
 - Los flujos de UI de `docs/06` contra el API local con los datos de ejemplo.
 
+## Estado (23 oct 2026)
+
+Revisión final hecha, en revisión del usuario: los 8 repositorios de Android (`Auth`, `Settings`, `Categories`, `Accounts`, `Entries`, `Reports`, `Home`, `Credit`) van contra el API cuando hay `API_BASE_URL`, y el modo demo sigue igual sin ella. Cada plan del 01 al 12 conectó su parte y la probó en el teléfono.
+
+| Pieza de la base común | Estado |
+|---|---|
+| `ApiClient` | Hecho: `ignoreUnknownKeys`, sin nulos explícitos, tiempos de espera (10 s conectar, 20 s petición), `X-Request-Id` nuevo por petición, `User-Agent` con la app y el dispositivo |
+| `TokenStore` | Hecho: correo y refresh token cifrados con AES/GCM y una clave del Android Keystore; el access token solo en memoria |
+| Renovación | Hecho: una sola a la vez (`Mutex`), 5 peticiones simultáneas con el token vencido renuevan una vez; renovación rechazada → Iniciar sesión |
+| `ApiErrors` | Hecho, con el mapeo de la tabla de arriba |
+| DTOs | Hecho: `snake_case`, montos con `BigDecimalSerializer`, fechas `LocalDate` |
+| Caché observable | Hecho, y **desde este plan también al volver a primer plano** (ver desviaciones) |
+| Sin conexión y cerrar sesión | Hecho |
+
+Pruebas de Android: 87 pasan (todas con `MockEngine` para los repositorios remotos); `lintDebug` sin avisos nuevos (36, los de antes).
+
 ## Desviaciones
 
-(Se completan al implementar cada plan.)
+- **Volver a primer plano se agregó al cerrar el plan.** Hasta aquí solo se releía tras las escrituras propias. Ahora `MainActivity` avisa a `RemoteChanges.refreshAll()` cuando la app vuelve del fondo (girar la pantalla no cuenta): las listas en memoria (cuentas, categorías, ajustes) se leen de nuevo y Inicio, movimientos, reportes y crédito también. Si falla (sin red), se queda lo que se veía. Sin la dependencia `lifecycle-process`: alcanza con `onStart`/`onStop` de la única Activity.
+- **"Hoy" sigue siendo la fecha del teléfono** (`DateProvider`), no el `today` del API. Ya aprobado como desviación del plan 08.
+- **No se hizo `api seed-dev`.** Las pruebas de integración de los planes 05 a 10 siembran sus datos por los endpoints (con un reloj fijo en el 2 oct 2026 donde hacía falta), y las pruebas en el teléfono se hicieron con datos propios. Se puede agregar si se quiere ver la app con las cifras del modo demo.
+- **Códigos de campo del API que Android no conoce** (`AMOUNTS_MUST_MATCH`, `AMOUNT_INVALID`, `CATEGORY_KIND_MISMATCH`, `COLOR_INVALID`, `CURRENCY_NOT_IN_PAIR`, `CURRENCY_NOT_SUPPORTED`, `FIELD_NOT_EDITABLE`, `INVALID_FORMAT`, `KIND_INVALID`, `RANGE_INVALID`, `SAME_CURRENCY`, `TIMEZONE_INVALID`, `TYPE_INVALID`) se muestran como "Algo salió mal": la app impide esos casos antes de enviar, así que solo llegarían por un error de la app.
+- **Errores nuevos que no estaban en la tabla**: `PASSWORD_REQUIRED` y `CODE_INVALID` (validación), y `DataError.WRONG_PASSWORD` (al eliminar la cuenta, plan 12). Un 401 `INVALID_CREDENTIALS` en una petición con sesión no se renueva ni se repite.
+- Android tiene además `PASSWORDS_DONT_MATCH`, que nunca viene del API: es la confirmación de la contraseña nueva (plan 11).
