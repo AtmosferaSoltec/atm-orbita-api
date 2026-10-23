@@ -73,6 +73,22 @@ Integración:
 
 Ninguna.
 
+## Estado (23 oct 2026)
+
+Implementado en API y Android, en revisión: falta la prueba en el teléfono.
+
+| Comprobación | Resultado |
+|---|---|
+| `gofmt`, `go vet`, `golangci-lint run`, `go build` | Sin problemas (`0 issues`) |
+| `go test ./...` contra el Postgres local | Pasa. Identity (4): eliminar con la contraseña → 204, el usuario ya no existe, ninguna sesión sirve (tampoco la de otro dispositivo: `/me` y renovar → 401), iniciar sesión → 401 y registrarse con el mismo correo → 201; contraseña vacía → 400 `PASSWORD_REQUIRED`, equivocada → 401 `INVALID_CREDENTIALS`, sin token → 401, y la cuenta sigue; cinco equivocadas → 429 incluso con la correcta; un gancho que falla → 500 y no se borra nada. Todos los módulos (1): la prueba descubre en el catálogo las 10 tablas con `user_id` (accounts, categories, credit_cards, credit_purchases, exchange_rates, password_reset_codes, profiles, sessions, transactions, transfers), exige que el usuario tenga filas en cada una (con una compra pagada, una transferencia y un código de recuperación), lo elimina y comprueba cero filas suyas en todas, cero tokens de renovación de sus sesiones y los datos de otro usuario intactos |
+| OpenAPI | Válido (Redocly), sin avisos nuevos |
+| Android: pruebas, `lintDebug`, `installDebug` | 86 pruebas pasan; ningún aviso nuevo de lint |
+
 ## Desviaciones
 
-(Se completan al implementar.)
+- **La prueba que descubre las tablas vive en `internal/modules/ledger/account_deletion_test.go`**, no en identity: ese harness es el único que cablea todos los módulos como main, y identity no puede importar a los demás. Además exige que el usuario tenga filas en **cada** tabla antes de borrar: una tabla nueva hace fallar la prueba hasta que se siembre ahí, así no pasa "en vacío".
+- **Cinco contraseñas equivocadas hacen esperar** (`429`), con el mismo contador por correo que el inicio de sesión.
+- **`refresh_tokens` no tiene `user_id`** (cuelga de `sessions`): la prueba comprueba aparte que no quede ninguno de las sesiones del usuario.
+- **Android: una contraseña equivocada ya no se toma por un token vencido.** Antes, cualquier 401 hacía que la app renovara la sesión y repitiera la petición; con `INVALID_CREDENTIALS` eso habría contado cada intento dos veces. Ahora ese 401 se responde tal cual y la sesión sigue.
+- **Android: mensaje propio** "La contraseña no es correcta." (`DataError.WRONG_PASSWORD`) en lugar de "Correo o contraseña incorrectos.", porque el diálogo no pide el correo.
+- Hoy ningún módulo usa `OnUserDeleted`; queda listo para archivos fuera de la base (R2).
