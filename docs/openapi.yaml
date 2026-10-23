@@ -165,6 +165,75 @@ paths:
             schema: { $ref: "#/components/schemas/RefreshRequest" }
       responses:
         "204": { description: Sesión cerrada }
+  /auth/forgot-password:
+    post:
+      summary: Pedir un código de 6 dígitos para recuperar la contraseña
+      description: |
+        Responde 204 siempre y enseguida, exista o no el correo. Si existe, envía un código que
+        dura 15 minutos y deja sin efecto los anteriores. Hasta 3 envíos cada 24 horas.
+      operationId: forgotPassword
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "204": { description: Pedido recibido }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/verify-reset-code:
+    post:
+      summary: Comprobar el código sin consumirlo
+      description: Un código incorrecto cuenta como intento; al quinto deja de servir.
+      operationId: verifyResetCode
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, code]
+              properties:
+                email: { type: string, format: email }
+                code: { type: string, pattern: '^[0-9]{6}$', example: "042317" }
+      responses:
+        "204": { description: El código sirve }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "422": { $ref: "#/components/responses/ResetCodeInvalid" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/reset-password:
+    post:
+      summary: Cambiar la contraseña con el código
+      description: |
+        Marca el código usado, guarda la contraseña nueva y cierra todas las sesiones. No inicia
+        sesión. Una contraseña nueva inválida no consume el código.
+      operationId: resetPassword
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, code, new_password]
+              properties:
+                email: { type: string, format: email }
+                code: { type: string, pattern: '^[0-9]{6}$' }
+                new_password: { type: string, minLength: 8, maxLength: 128 }
+      responses:
+        "204": { description: Contraseña cambiada }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "422": { $ref: "#/components/responses/ResetCodeInvalid" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
   /me:
     get:
       summary: La cuenta de quien hace la petición
@@ -935,6 +1004,11 @@ paths:
 
 components:
   responses:
+    ResetCodeInvalid:
+      description: RESET_CODE_INVALID (código incorrecto, usado, vencido, sin intentos o de un correo sin cuenta)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
     CreditConflict:
       description: CARD_HAS_PENDING_PURCHASES (archivar una tarjeta que debe) o PURCHASE_ALREADY_PAID (editar o eliminar una compra pagada)
       content:
