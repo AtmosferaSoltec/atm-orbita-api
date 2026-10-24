@@ -44,6 +44,8 @@ type GoogleInput struct {
 	MainCurrency string
 	Timezone     string
 	UserAgent    string
+	// Web opens a browser session (longer refresh, cookie); false, a native one.
+	Web bool
 }
 
 func (s *Service) NewGoogleChallenge(ctx context.Context) (string, error) {
@@ -137,7 +139,7 @@ func (s *Service) GoogleSignIn(ctx context.Context, in GoogleInput) (AuthResult,
 		if err := s.deps.Users.TouchLastLogin(ctx, user.ID); err != nil {
 			return err
 		}
-		tokens, err := s.openSession(ctx, user.ID, in.UserAgent, now, true)
+		tokens, err := s.openSession(ctx, user.ID, in.UserAgent, now, in.Web)
 		result = AuthResult{User: user, Tokens: tokens}
 		return err
 	})

@@ -86,3 +86,19 @@ Validation completed locally: the full API suite passed against disposable Postg
 ## Deviations
 
 The public client ID is provided at runtime by the API rather than duplicated in frontend build settings. This keeps one image across environments. The shared database migration has been applied after receiving owner configuration. Production application configuration and deployments remain pending; the client secret and downloaded OAuth JSON are not used.
+
+## Native apps (Android), 24 Oct 2026
+
+Added for Android, which cannot hold the browser cookies. Same endpoints, chosen by the absence of `X-Session-Transport: cookie`:
+
+| Step | Browser (unchanged) | Native app |
+| --- | --- | --- |
+| `POST /auth/google/challenge` | Nonce in the body and in the HttpOnly cookie | Nonce in the body only, no cookie |
+| `POST /auth/google` | Nonce read only from the cookie (a body `nonce` is ignored) | `nonce` in the JSON body |
+| Session | Web (90-day renewable refresh, cookie) | Native (`REFRESH_TOKEN_TTL_DAYS`), refresh token in the body like `login` |
+
+The nonce is still single-use and consumed in the same transaction; a failed link can retry with the same nonce until it expires. The browser path cannot be driven with a body nonce, so the cookie binding there is unchanged. Android uses Credential Manager with the **web** client ID (`GET /auth/google/config`) as `serverClientId`, so the ID token audience is the one the API already verifies: **no new API variable**.
+
+Owner setup for Android (Google Cloud Console → Clients): one OAuth client of type **Android** per signing key, package `com.atmosferast.orbita` and the key's SHA-1 (debug keystore for development, the Play app-signing key for release). Without it Credential Manager reports no credential and the app says Google is not available.
+
+Tests (`google_native_test.go`): native sign-in returns the refresh token in the body and opens a non-web session that renews; replay → `GOOGLE_CHALLENGE_EXPIRED`; the native challenge sets no cookie; a browser request with only a body nonce → 401; linking an existing account retries with the same nonce and the password.

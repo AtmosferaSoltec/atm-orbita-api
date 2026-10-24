@@ -17,35 +17,35 @@ func (h *Handler) googleConfig(c *gin.Context) {
 	apierror.OK(c, gin.H{"client_id": h.googleClientID})
 }
 
-// Custom headers require CORS preflight. The HttpOnly, SameSite cookie binds
-// the Google nonce to this browser; the database makes it single-use.
+// Custom headers require CORS preflight. In a browser the HttpOnly, SameSite
+// cookie binds the Google nonce to it; a native app (no session header) keeps
+// the nonce itself and sends it back. Either way the database makes it
+// single-use.
 func (h *Handler) googleChallenge(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	if !usesCookie(c) {
-		apierror.Respond(c, apierror.ErrUnauthorized)
-		return
-	}
 	nonce, err := h.service.NewGoogleChallenge(c.Request.Context())
 	if err != nil {
 		respondError(c, err)
 		return
 	}
-	h.writeGoogleCookie(c, nonce, int(app.GoogleChallengeTTL.Seconds()))
+	if usesCookie(c) {
+		h.writeGoogleCookie(c, nonce, int(app.GoogleChallengeTTL.Seconds()))
+	}
 	apierror.OK(c, gin.H{"nonce": nonce})
 }
 
+// googleSignIn: a browser's nonce comes in its cookie and it gets a web session
+// (refresh token in a cookie); a native app sends the nonce in the body and gets
+// a native session with the refresh token in the body, like login.
 func (h *Handler) googleSignIn(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	if !usesCookie(c) || c.ContentType() != "application/json" {
+	if c.ContentType() != "application/json" {
 		apierror.Respond(c, apierror.ErrUnauthorized)
 		return
 	}
-	nonce, _ := c.Cookie(googleCookieName)
-	if nonce == "" {
-		respondError(c, domain.ErrGoogleChallengeExpired)
-		return
-	}
+	web := usesCookie(c)
 	var req struct {
+		Nonce        string `json:"nonce"`
 		Credential   string `json:"credential"`
 		Password     string `json:"password"`
 		MainCurrency string `json:"main_currency"`
@@ -54,15 +54,26 @@ func (h *Handler) googleSignIn(c *gin.Context) {
 	if !bind(c, &req) {
 		return
 	}
+	nonce := req.Nonce
+	if web {
+		// The browser's nonce is only trusted from its own cookie.
+		nonce, _ = c.Cookie(googleCookieName)
+	}
+	if nonce == "" {
+		respondError(c, domain.ErrGoogleChallengeExpired)
+		return
+	}
 	result, err := h.service.GoogleSignIn(c.Request.Context(), app.GoogleInput{
 		Credential: req.Credential, Nonce: nonce, Password: req.Password,
-		MainCurrency: req.MainCurrency, Timezone: req.Timezone, UserAgent: c.Request.UserAgent(),
+		MainCurrency: req.MainCurrency, Timezone: req.Timezone, UserAgent: c.Request.UserAgent(), Web: web,
 	})
 	if err != nil {
 		respondError(c, err)
 		return
 	}
-	h.writeGoogleCookie(c, "", -1)
+	if web {
+		h.writeGoogleCookie(c, "", -1)
+	}
 	apierror.OK(c, toAuthResponse(h.deliverRefreshToken(c, result)))
 }
 

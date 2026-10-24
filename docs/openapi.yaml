@@ -198,12 +198,17 @@ paths:
                       client_id: { type: string }
   /auth/google/challenge:
     post:
-      summary: Create a browser-bound Google sign-in challenge
+      summary: Create a Google sign-in challenge (browser or native app)
       operationId: createGoogleSignInChallenge
       security: []
       parameters:
         - $ref: "#/components/parameters/WebSessionTransport"
-      description: Sets the HttpOnly, SameSite=Strict orbita_google_nonce cookie. The nonce expires in five minutes and is consumed transactionally on successful sign-in. Pass it to Google Identity Services initialize().
+      description: |
+        The nonce expires in five minutes and is consumed transactionally on successful
+        sign-in. With `X-Session-Transport: cookie` (browser) it is also set in the
+        HttpOnly, SameSite=Strict orbita_google_nonce cookie; pass it to Google Identity
+        Services initialize(). Without the header (native app, e.g. Android Credential
+        Manager) no cookie is set: the app keeps the nonce and sends it back in the body.
       responses:
         "200":
           description: Challenge created
@@ -231,12 +236,14 @@ paths:
       parameters:
         - $ref: "#/components/parameters/WebSessionTransport"
       description: |
-        JSON request with the browser challenge cookie. The API verifies Google's
+        Browser: JSON request with `X-Session-Transport: cookie` and the challenge
+        cookie; the refresh token comes in an HttpOnly cookie and the session is a web
+        one. Native app: no header, the challenge `nonce` in the body; the refresh token
+        comes in the body and the session is a native one. The API verifies Google's
         signature, audience, issuer, expiry, verified email and nonce. It uses the
         Google subject as the external identity. An existing email/password account
         must confirm its password once; Google-only registrations run the normal
-        profile and ledger hooks. Returns Orbita tokens, with refresh in an HttpOnly
-        cookie. Only a successful exchange consumes the challenge.
+        profile and ledger hooks. Only a successful exchange consumes the challenge.
       requestBody:
         required: true
         content:
@@ -245,6 +252,7 @@ paths:
               type: object
               required: [credential]
               properties:
+                nonce: { type: string, maxLength: 128, description: "Native apps only: the challenge nonce. Browsers send it in the cookie" }
                 credential: { type: string, maxLength: 16384 }
                 password: { type: string, description: Required only to link an existing account }
                 main_currency: { type: string, default: PEN }
