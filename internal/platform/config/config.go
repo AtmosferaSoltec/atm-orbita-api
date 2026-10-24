@@ -34,6 +34,8 @@ type Config struct {
 	JWTAccessSecret         string
 	AccessTokenTTL          time.Duration
 	RefreshTokenTTL         time.Duration
+	WebRefreshTokenTTL      time.Duration
+	GoogleWebClientID       string
 	CORSOrigins             []string
 	RateLimitPerMinute      int
 	LoginRateLimitPerMinute int
@@ -75,6 +77,8 @@ func LoadFrom(lookup func(string) string) (Config, error) {
 		JWTAccessSecret:         r.secret("JWT_ACCESS_SECRET"),
 		AccessTokenTTL:          time.Duration(r.positiveInt("ACCESS_TOKEN_TTL_SECONDS")) * time.Second,
 		RefreshTokenTTL:         time.Duration(r.positiveInt("REFRESH_TOKEN_TTL_DAYS")) * 24 * time.Hour,
+		WebRefreshTokenTTL:      time.Duration(r.optionalDays("WEB_REFRESH_TOKEN_TTL_DAYS", 90)) * 24 * time.Hour,
+		GoogleWebClientID:       r.optional("GOOGLE_WEB_CLIENT_ID"),
 		CORSOrigins:             r.list("CORS_ORIGIN"),
 		RateLimitPerMinute:      r.positiveInt("RATE_LIMIT_PER_MINUTE"),
 		LoginRateLimitPerMinute: r.positiveInt("LOGIN_RATE_LIMIT_PER_MINUTE"),
@@ -88,6 +92,10 @@ func LoadFrom(lookup func(string) string) (Config, error) {
 			SecretAccessKey: r.optional("R2_SECRET_ACCESS_KEY"),
 			Bucket:          r.optional("R2_BUCKET"),
 		},
+	}
+
+	if cfg.GoogleWebClientID != "" && (!strings.HasSuffix(cfg.GoogleWebClientID, ".apps.googleusercontent.com") || strings.ContainsAny(cfg.GoogleWebClientID, " \t\n")) {
+		r.fail("GOOGLE_WEB_CLIENT_ID must be an OAuth web client ID ending in .apps.googleusercontent.com")
 	}
 
 	if cfg.IsProduction() {
@@ -201,4 +209,17 @@ func (r *reader) requireInProduction(name string, present bool) {
 	if !present {
 		r.fail("%s is required in production", name)
 	}
+}
+
+func (r *reader) optionalDays(name string, fallback int) int {
+	value := r.optional(name)
+	if value == "" {
+		return fallback
+	}
+	days, err := strconv.Atoi(value)
+	if err != nil || days < 1 || days > 365 {
+		r.fail("%s must be between 1 and 365 days", name)
+		return fallback
+	}
+	return days
 }

@@ -21,6 +21,8 @@ import (
 
 // Service son los casos de uso que usa el handler.
 type Service interface {
+	NewGoogleChallenge(ctx context.Context) (string, error)
+	GoogleSignIn(ctx context.Context, in app.GoogleInput) (app.AuthResult, error)
 	Register(ctx context.Context, in app.RegisterInput) (app.AuthResult, error)
 	Login(ctx context.Context, in app.LoginInput) (app.AuthResult, error)
 	Refresh(ctx context.Context, refreshToken string) (app.Tokens, error)
@@ -49,18 +51,22 @@ var (
 
 // Handler atiende las rutas de autenticación.
 type Handler struct {
-	service Service
-	cookie  CookieOptions
+	service        Service
+	cookie         CookieOptions
+	googleClientID string
 }
 
 // NewHandler crea el handler.
-func NewHandler(service Service, cookie CookieOptions) *Handler {
-	return &Handler{service: service, cookie: cookie}
+func NewHandler(service Service, cookie CookieOptions, googleClientID string) *Handler {
+	return &Handler{service: service, cookie: cookie, googleClientID: googleClientID}
 }
 
 // Routes monta las rutas. public no exige token; limited son las públicas con
 // el límite estrecho de LOGIN_RATE_LIMIT_PER_MINUTE; protected exige token.
 func (h *Handler) Routes(public, limited, protected gin.IRoutes) {
+	public.GET("/auth/google/config", h.googleConfig)
+	limited.POST("/auth/google/challenge", h.googleChallenge)
+	limited.POST("/auth/google", h.googleSignIn)
 	limited.POST("/auth/register", h.register)
 	limited.POST("/auth/login", h.login)
 	limited.POST("/auth/refresh", h.refresh)
@@ -116,7 +122,7 @@ func (h *Handler) register(c *gin.Context) {
 	}
 	result, err := h.service.Register(c.Request.Context(), app.RegisterInput{
 		Email: req.Email, Name: req.Name, Password: req.Password, MainCurrency: req.MainCurrency,
-		Timezone: req.Timezone, UserAgent: c.Request.UserAgent(),
+		Timezone: req.Timezone, UserAgent: c.Request.UserAgent(), Web: usesCookie(c),
 	})
 	if err != nil {
 		respondError(c, err)
@@ -131,7 +137,7 @@ func (h *Handler) login(c *gin.Context) {
 		return
 	}
 	result, err := h.service.Login(c.Request.Context(), app.LoginInput{
-		Email: req.Email, Password: req.Password, UserAgent: c.Request.UserAgent(),
+		Email: req.Email, Password: req.Password, UserAgent: c.Request.UserAgent(), Web: usesCookie(c),
 	})
 	if err != nil {
 		respondError(c, err)
@@ -154,7 +160,7 @@ func (h *Handler) refresh(c *gin.Context) {
 		return
 	}
 	if usesCookie(c) {
-		h.setCookie(c, tokens.RefreshToken)
+		h.setCookie(c, tokens)
 		tokens.RefreshToken = ""
 	}
 	apierror.OK(c, gin.H{"tokens": toTokens(tokens)})
@@ -193,7 +199,7 @@ func (h *Handler) refreshTokenOf(c *gin.Context) (string, bool) {
 // y lo saca del cuerpo, para que JavaScript nunca lo vea.
 func (h *Handler) deliverRefreshToken(c *gin.Context, result app.AuthResult) app.AuthResult {
 	if usesCookie(c) {
-		h.setCookie(c, result.Tokens.RefreshToken)
+		h.setCookie(c, result.Tokens)
 		result.Tokens.RefreshToken = ""
 	}
 	return result
@@ -237,6 +243,16 @@ func respondError(c *gin.Context, err error) {
 	case errors.As(err, &tooMany):
 		c.Header("Retry-After", strconv.Itoa(int(tooMany.RetryAfter.Seconds())+1))
 		apierror.Respond(c, apierror.ErrTooManyRequests)
+	case errors.Is(err, domain.ErrGoogleUnavailable):
+		apierror.Respond(c, apierror.New(http.StatusServiceUnavailable, "GOOGLE_UNAVAILABLE", "El acceso con Google no está disponible en este momento."))
+	case errors.Is(err, domain.ErrGoogleInvalid):
+		apierror.Respond(c, apierror.New(http.StatusUnauthorized, "GOOGLE_INVALID", "No pudimos verificar tu cuenta de Google. Inténtalo de nuevo."))
+	case errors.Is(err, domain.ErrGoogleChallengeExpired):
+		apierror.Respond(c, apierror.New(http.StatusUnauthorized, "GOOGLE_CHALLENGE_EXPIRED", "El intento de acceso venció. Vuelve a continuar con Google."))
+	case errors.Is(err, domain.ErrGoogleLinkRequired):
+		apierror.Respond(c, apierror.New(http.StatusConflict, "GOOGLE_LINK_REQUIRED", "Confirma la contraseña de tu cuenta para vincular Google."))
+	case errors.Is(err, domain.ErrGoogleIdentityConflict):
+		apierror.Respond(c, apierror.New(http.StatusConflict, "GOOGLE_IDENTITY_CONFLICT", "Tu cuenta ya tiene otra cuenta de Google vinculada."))
 	case errors.Is(err, domain.ErrEmailTaken):
 		apierror.Respond(c, errEmailTaken)
 	case errors.Is(err, domain.ErrInvalidCredentials):

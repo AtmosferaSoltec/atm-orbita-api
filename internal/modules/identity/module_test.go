@@ -40,7 +40,7 @@ type harness struct {
 	clock  *movableClock
 }
 
-func newHarness(t *testing.T, loginPerMinute int) *harness {
+func newHarness(t *testing.T, loginPerMinute int, options ...func(*identity.Deps)) *harness {
 	t.Helper()
 	pool := testsupport.MigratedPool(t)
 	gin.SetMode(gin.TestMode)
@@ -51,11 +51,15 @@ func newHarness(t *testing.T, loginPerMinute int) *harness {
 	require.NoError(t, err)
 	mailer := &captureMailer{}
 	now := &movableClock{at: time.Now()}
-	module, err := identity.New(identity.Deps{
+	deps := identity.Deps{
 		Tx: tx.NewRunner(pool), Clock: now, JWTSecret: strings.Repeat("k", 64),
 		AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 30 * 24 * time.Hour, PasswordParams: &identity.FastPasswordParams,
 		Mailer: mailer, Background: func(work func()) { work() },
-	})
+	}
+	for _, option := range options {
+		option(&deps)
+	}
+	module, err := identity.New(deps)
 	require.NoError(t, err)
 	limited := api.Group("", middleware.NewRateLimiter(loginPerMinute).Middleware())
 	protected := api.Group("", auth.Require(module.Authenticator()))

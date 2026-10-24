@@ -1,14 +1,14 @@
 -- name: CreateUser :exec
 INSERT INTO users (id, email, password_hash, name)
-VALUES ($1, $2, $3, $4);
+VALUES (sqlc.arg(id), sqlc.arg(email), NULLIF(sqlc.arg(password_hash)::text, ''), sqlc.narg(name)::text);
 
 -- name: GetUserByEmail :one
-SELECT id, email, password_hash, name, created_at
+SELECT id, email, COALESCE(password_hash, '')::text AS password_hash, name, created_at
 FROM users
 WHERE email = $1;
 
 -- name: GetUserByID :one
-SELECT id, email, password_hash, name, created_at
+SELECT id, email, COALESCE(password_hash, '')::text AS password_hash, name, created_at
 FROM users
 WHERE id = $1;
 
@@ -16,8 +16,8 @@ WHERE id = $1;
 UPDATE users SET last_login_at = now(), updated_at = now() WHERE id = $1;
 
 -- name: CreateSession :exec
-INSERT INTO sessions (id, user_id, user_agent)
-VALUES ($1, $2, $3);
+INSERT INTO sessions (id, user_id, user_agent, is_web)
+VALUES ($1, $2, $3, $4);
 
 -- name: IsSessionActive :one
 SELECT EXISTS (
@@ -37,7 +37,7 @@ VALUES ($1, $2, $3, $4);
 
 -- Bloquea la fila: dos renovaciones con el mismo token no pueden pasar a la vez.
 -- name: LockRefreshToken :one
-SELECT r.id, r.session_id, r.expires_at, r.used_at, s.user_id, s.revoked_at AS session_revoked_at
+SELECT r.id, r.session_id, r.expires_at, r.used_at, s.user_id, s.revoked_at AS session_revoked_at, s.is_web
 FROM refresh_tokens r
 JOIN sessions s ON s.id = r.session_id
 WHERE r.token_hash = $1
@@ -86,3 +86,18 @@ WHERE user_id = $1 AND revoked_at IS NULL;
 -- La cascada se lleva todo lo del usuario (plan 12).
 -- name: DeleteUser :execrows
 DELETE FROM users WHERE id = $1;
+
+-- name: GetExternalIdentityUser :one
+SELECT user_id FROM external_identities WHERE provider = 'google' AND subject = $1;
+
+-- name: CreateExternalIdentity :exec
+INSERT INTO external_identities (provider, subject, user_id) VALUES ('google', $1, $2);
+
+-- name: CreateGoogleChallenge :exec
+INSERT INTO google_login_challenges (nonce_hash, expires_at) VALUES ($1, $2);
+
+-- name: DeleteExpiredGoogleChallenges :exec
+DELETE FROM google_login_challenges WHERE expires_at <= $1;
+
+-- name: ConsumeGoogleChallenge :execrows
+DELETE FROM google_login_challenges WHERE nonce_hash = $1 AND expires_at > $2;

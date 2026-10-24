@@ -11,7 +11,7 @@
 
 | Tema | Decisión | Motivo |
 |---|---|---|
-| Dónde vive el refresh token en la web | Cookie `orbita_refresh`: `HttpOnly`, `SameSite=Strict`, `Path=/api/v1/auth`, `Max-Age` = `REFRESH_TOKEN_TTL_DAYS`. `Secure` siempre, salvo con `APP_ENV=development` (http://localhost) | Un XSS no puede robarlo. El access token sigue igual: en memoria, por `Authorization: Bearer` |
+| Dónde vive el refresh token en la web | Cookie `orbita_refresh`: `HttpOnly`, `SameSite=Strict`, `Path=/api/v1/auth`, `Max-Age` = la duración del token emitido (plan 19: `WEB_REFRESH_TOKEN_TTL_DAYS` para sesiones web nuevas). `Secure` siempre, salvo con `APP_ENV=development` (http://localhost) | Un XSS no puede robarlo. El access token sigue igual: en memoria, por `Authorization: Bearer` |
 | Cómo pide la web la cookie | Cabecera `X-Session-Transport: cookie` en `register`, `login`, `refresh` y `logout` | Sin la cabecera todo funciona como hoy (Android no cambia). Una cabecera propia obliga al navegador a hacer *preflight*: otro sitio no puede forjar la petición (CSRF), y además la cookie es `Strict` |
 | Respuesta con la cabecera | `tokens.refresh_token` no viene en el cuerpo (`omitempty`); viene en la cookie | El token nunca toca JavaScript |
 | Nombre | Columna `users.name VARCHAR(60)` **nullable**. `register` acepta `name` opcional (recortado; vacío = sin nombre; más de 60 → `NAME_TOO_LONG`). `user.name` sale en `register`, `login` y `GET /me` (`null` si no tiene) | La web lo exige en su formulario; Android puede seguir sin enviarlo. Nullable para que la versión desplegada del API siga funcionando con la base ya migrada |

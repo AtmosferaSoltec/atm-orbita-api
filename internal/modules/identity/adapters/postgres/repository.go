@@ -92,7 +92,7 @@ func (r Sessions) Create(ctx context.Context, session app.Session) error {
 		userAgent = &session.UserAgent
 	}
 	return r.q(ctx).CreateSession(ctx, sqlcgen.CreateSessionParams{
-		ID: session.ID, UserID: session.UserID, UserAgent: userAgent,
+		ID: session.ID, UserID: session.UserID, UserAgent: userAgent, IsWeb: session.Web,
 	})
 }
 
@@ -134,6 +134,7 @@ func (r Sessions) LockRefreshToken(ctx context.Context, hash []byte) (app.Locked
 		ExpiresAt:      row.ExpiresAt,
 		Used:           row.UsedAt != nil,
 		SessionRevoked: row.SessionRevokedAt != nil,
+		Web:            row.IsWeb,
 	}, nil
 }
 
@@ -193,7 +194,7 @@ func (r ResetCodes) Use(ctx context.Context, id uuid.UUID, now time.Time) (bool,
 
 // SetPassword guarda el hash de la contraseña nueva.
 func (r Users) SetPassword(ctx context.Context, id uuid.UUID, hash string) error {
-	return sqlcgen.New(r.db.DB(ctx)).UpdatePassword(ctx, sqlcgen.UpdatePasswordParams{ID: id, PasswordHash: hash})
+	return sqlcgen.New(r.db.DB(ctx)).UpdatePassword(ctx, sqlcgen.UpdatePasswordParams{ID: id, PasswordHash: &hash})
 }
 
 // RevokeAll cierra todas las sesiones del usuario.

@@ -96,3 +96,25 @@ func TestAnUnknownEnvironmentIsRejected(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "APP_ENV")
 }
+
+func TestGoogleAndWebSessionConfiguration(t *testing.T) {
+	cfg, err := load(validEnv())
+	require.NoError(t, err)
+	assert.Equal(t, 90*24*time.Hour, cfg.WebRefreshTokenTTL)
+	assert.Empty(t, cfg.GoogleWebClientID)
+	env := validEnv()
+	env["WEB_REFRESH_TOKEN_TTL_DAYS"] = "60"
+	env["GOOGLE_WEB_CLIENT_ID"] = "123-example.apps.googleusercontent.com"
+	cfg, err = load(env)
+	require.NoError(t, err)
+	assert.Equal(t, 60*24*time.Hour, cfg.WebRefreshTokenTTL)
+	for _, invalid := range []string{"0", "-1", "366", "many"} {
+		env["WEB_REFRESH_TOKEN_TTL_DAYS"] = invalid
+		_, err := load(env)
+		require.ErrorContains(t, err, "WEB_REFRESH_TOKEN_TTL_DAYS")
+	}
+	env["WEB_REFRESH_TOKEN_TTL_DAYS"] = "90"
+	env["GOOGLE_WEB_CLIENT_ID"] = "an-api-key"
+	_, err = load(env)
+	require.ErrorContains(t, err, "GOOGLE_WEB_CLIENT_ID")
+}

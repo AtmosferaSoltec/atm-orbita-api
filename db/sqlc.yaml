@@ -47,6 +47,7 @@ sql:
       - migrations/00001_identity_create_users_and_sessions.sql
       - migrations/00010_identity_create_password_reset_codes.sql
       - migrations/00011_identity_add_user_name.sql
+      - migrations/00013_identity_google_and_web_sessions.sql
     queries: ../internal/modules/identity/adapters/postgres/queries.sql
     gen:
       go:

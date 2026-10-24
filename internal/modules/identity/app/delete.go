@@ -32,11 +32,15 @@ func (s *Service) DeleteAccount(ctx context.Context, userID uuid.UUID, password 
 	if wait := s.attempts.wait(user.Email, now); wait > 0 {
 		return &domain.TooManyAttemptsError{RetryAfter: wait}
 	}
-	ok, err := s.deps.Hasher.Verify(password, user.PasswordHash)
+	hash := user.PasswordHash
+	if hash == "" {
+		hash = s.dummyHash
+	}
+	ok, err := s.deps.Hasher.Verify(password, hash)
 	if err != nil {
 		return fmt.Errorf("verify password: %w", err)
 	}
-	if !ok {
+	if !ok || user.PasswordHash == "" {
 		s.attempts.failed(user.Email, now)
 		logger.From(ctx).Warn("security: account deletion with a wrong password", "user_id", userID)
 		return domain.ErrInvalidCredentials

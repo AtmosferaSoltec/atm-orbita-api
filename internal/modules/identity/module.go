@@ -25,6 +25,10 @@ import (
 // NewUser es lo que reciben los ganchos de alta.
 type NewUser = app.NewUser
 
+// GoogleAccount and GoogleVerifier expose the external identity boundary.
+type GoogleAccount = app.GoogleAccount
+type GoogleVerifier = app.GoogleVerifier
+
 // RegistrationHook corre dentro de la transacción del registro.
 type RegistrationHook = app.RegistrationHook
 
@@ -41,11 +45,15 @@ var FastPasswordParams = PasswordParams{MemoryKiB: 1024, Iterations: 1, Parallel
 
 // Deps son las dependencias del módulo.
 type Deps struct {
-	Tx              tx.Runner
-	Clock           clock.Clock
-	JWTSecret       string
-	AccessTokenTTL  time.Duration
-	RefreshTokenTTL time.Duration
+	Tx                 tx.Runner
+	Clock              clock.Clock
+	JWTSecret          string
+	AccessTokenTTL     time.Duration
+	RefreshTokenTTL    time.Duration
+	WebRefreshTokenTTL time.Duration
+	GoogleWebClientID  string
+	// GoogleVerifier is injectable for tests; production uses Google signed ID tokens.
+	GoogleVerifier app.GoogleVerifier
 	// PasswordParams permite bajar el costo de argon2 en pruebas; vacío usa el de producción.
 	PasswordParams *PasswordParams
 	// Mailer envía los correos de recuperar la contraseña (en segundo plano).
@@ -69,7 +77,13 @@ func New(deps Deps) (*Module, error) {
 	if deps.PasswordParams != nil {
 		params = *deps.PasswordParams
 	}
+	google := deps.GoogleVerifier
+	if google == nil && deps.GoogleWebClientID != "" {
+		google = security.GoogleVerifier{ClientID: deps.GoogleWebClientID}
+	}
+	store := postgres.NewGoogleStore(deps.Tx)
 	service, err := app.NewService(app.Deps{
+		Google: google, Identities: store, Challenges: store,
 		Users:       postgres.NewUsers(deps.Tx),
 		Sessions:    postgres.NewSessions(deps.Tx),
 		ResetCodes:  postgres.NewResetCodes(deps.Tx),
@@ -78,7 +92,7 @@ func New(deps Deps) (*Module, error) {
 		Mailer:      resetMailer{deps.Mailer},
 		Tx:          deps.Tx,
 		Clock:       deps.Clock,
-		Config:      app.Config{AccessTokenTTL: deps.AccessTokenTTL, RefreshTokenTTL: deps.RefreshTokenTTL},
+		Config:      app.Config{AccessTokenTTL: deps.AccessTokenTTL, RefreshTokenTTL: deps.RefreshTokenTTL, WebRefreshTokenTTL: deps.WebRefreshTokenTTL},
 		ResetSecret: []byte(deps.JWTSecret),
 		Background:  deps.Background,
 	})
@@ -86,7 +100,7 @@ func New(deps Deps) (*Module, error) {
 		return nil, fmt.Errorf("identity: %w", err)
 	}
 	cookie := identityhttp.CookieOptions{Secure: deps.SecureCookies, MaxAge: deps.RefreshTokenTTL}
-	return &Module{service: service, handler: identityhttp.NewHandler(service, cookie)}, nil
+	return &Module{service: service, handler: identityhttp.NewHandler(service, cookie, deps.GoogleWebClientID)}, nil
 }
 
 // Routes monta las rutas del módulo.

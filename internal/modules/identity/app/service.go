@@ -37,12 +37,16 @@ const (
 
 // Config son los tiempos de vida de los tokens.
 type Config struct {
-	AccessTokenTTL  time.Duration
-	RefreshTokenTTL time.Duration
+	AccessTokenTTL     time.Duration
+	RefreshTokenTTL    time.Duration
+	WebRefreshTokenTTL time.Duration
 }
 
 // Deps son los puertos que necesita el servicio.
 type Deps struct {
+	Google     GoogleVerifier
+	Identities ExternalIdentities
+	Challenges GoogleChallenges
 	Users      Users
 	Sessions   Sessions
 	ResetCodes ResetCodes
@@ -88,9 +92,10 @@ func (s *Service) OnUserRegistered(hook RegistrationHook) {
 
 // Tokens son los que recibe la app al entrar o renovar.
 type Tokens struct {
-	AccessToken  string
-	ExpiresIn    time.Duration
-	RefreshToken string
+	AccessToken      string
+	ExpiresIn        time.Duration
+	RefreshToken     string
+	RefreshExpiresIn time.Duration
 }
 
 // AuthResult es la respuesta de registro e inicio de sesión.
@@ -101,6 +106,7 @@ type AuthResult struct {
 
 // RegisterInput son los datos del formulario de registro.
 type RegisterInput struct {
+	Web          bool
 	Email        string
 	Name         string
 	Password     string
@@ -148,7 +154,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (AuthResult, e
 				return fmt.Errorf("registration hook: %w", err)
 			}
 		}
-		tokens, err = s.openSession(ctx, user.ID, in.UserAgent, now)
+		tokens, err = s.openSession(ctx, user.ID, in.UserAgent, now, in.Web)
 		return err
 	})
 	if err != nil {
@@ -160,6 +166,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (AuthResult, e
 
 // LoginInput son los datos de Iniciar sesión.
 type LoginInput struct {
+	Web       bool
 	Email     string
 	Password  string
 	UserAgent string
@@ -183,11 +190,15 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (AuthResult, error) 
 		return AuthResult{}, err
 	}
 
-	ok, err := s.deps.Hasher.Verify(in.Password, user.PasswordHash)
+	hash := user.PasswordHash
+	if hash == "" {
+		hash = s.dummyHash
+	}
+	ok, err := s.deps.Hasher.Verify(in.Password, hash)
 	if err != nil {
 		return AuthResult{}, fmt.Errorf("verify password: %w", err)
 	}
-	if !ok {
+	if !ok || user.PasswordHash == "" {
 		return AuthResult{}, s.loginFailed(ctx, email, now)
 	}
 	s.attempts.succeeded(email)
@@ -197,7 +208,7 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (AuthResult, error) 
 		if err := s.deps.Users.TouchLastLogin(ctx, user.ID); err != nil {
 			return err
 		}
-		tokens, err = s.openSession(ctx, user.ID, in.UserAgent, now)
+		tokens, err = s.openSession(ctx, user.ID, in.UserAgent, now, in.Web)
 		return err
 	})
 	if err != nil {
@@ -241,7 +252,7 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (Tokens, err
 		if err := s.deps.Sessions.Touch(ctx, stored.SessionID); err != nil {
 			return err
 		}
-		tokens, err = s.issueTokens(ctx, stored.UserID, stored.SessionID, now)
+		tokens, err = s.issueTokens(ctx, stored.UserID, stored.SessionID, now, stored.Web)
 		return err
 	})
 	if err != nil {
@@ -293,15 +304,15 @@ func (s *Service) Authenticate(ctx context.Context, accessToken string) (auth.Pr
 	return auth.Principal{UserID: claims.UserID, SessionID: claims.SessionID}, nil
 }
 
-func (s *Service) openSession(ctx context.Context, userID uuid.UUID, userAgent string, now time.Time) (Tokens, error) {
+func (s *Service) openSession(ctx context.Context, userID uuid.UUID, userAgent string, now time.Time, web bool) (Tokens, error) {
 	sessionID := ids.New()
-	if err := s.deps.Sessions.Create(ctx, Session{ID: sessionID, UserID: userID, UserAgent: truncate(userAgent, userAgentMaxRunes)}); err != nil {
+	if err := s.deps.Sessions.Create(ctx, Session{Web: web, ID: sessionID, UserID: userID, UserAgent: truncate(userAgent, userAgentMaxRunes)}); err != nil {
 		return Tokens{}, err
 	}
-	return s.issueTokens(ctx, userID, sessionID, now)
+	return s.issueTokens(ctx, userID, sessionID, now, web)
 }
 
-func (s *Service) issueTokens(ctx context.Context, userID, sessionID uuid.UUID, now time.Time) (Tokens, error) {
+func (s *Service) issueTokens(ctx context.Context, userID, sessionID uuid.UUID, now time.Time, web bool) (Tokens, error) {
 	access, err := s.deps.Tokens.Issue(AccessClaims{UserID: userID, SessionID: sessionID}, now)
 	if err != nil {
 		return Tokens{}, fmt.Errorf("issue access token: %w", err)
@@ -310,16 +321,23 @@ func (s *Service) issueTokens(ctx context.Context, userID, sessionID uuid.UUID, 
 	if err != nil {
 		return Tokens{}, err
 	}
+	ttl := s.deps.Config.RefreshTokenTTL
+	if web {
+		ttl = s.deps.Config.WebRefreshTokenTTL
+		if ttl <= 0 {
+			ttl = 90 * 24 * time.Hour
+		}
+	}
 	err = s.deps.Sessions.CreateRefreshToken(ctx, RefreshToken{
 		ID:        ids.New(),
 		SessionID: sessionID,
 		Hash:      hashToken(refresh),
-		ExpiresAt: now.Add(s.deps.Config.RefreshTokenTTL),
+		ExpiresAt: now.Add(ttl),
 	})
 	if err != nil {
 		return Tokens{}, err
 	}
-	return Tokens{AccessToken: access, ExpiresIn: s.deps.Config.AccessTokenTTL, RefreshToken: refresh}, nil
+	return Tokens{AccessToken: access, ExpiresIn: s.deps.Config.AccessTokenTTL, RefreshToken: refresh, RefreshExpiresIn: ttl}, nil
 }
 
 func newRefreshToken() (string, error) {

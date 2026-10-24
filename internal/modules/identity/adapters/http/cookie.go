@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity/app"
 )
 
 // La web no guarda el refresh token donde JavaScript lo lea: lo pide en una
@@ -30,8 +32,12 @@ func usesCookie(c *gin.Context) bool {
 	return c.GetHeader(SessionTransportHeader) == cookieTransport
 }
 
-func (h *Handler) setCookie(c *gin.Context, token string) {
-	h.writeCookie(c, token, int(h.cookie.MaxAge.Seconds()))
+func (h *Handler) setCookie(c *gin.Context, tokens app.Tokens) {
+	ttl := tokens.RefreshExpiresIn
+	if ttl <= 0 {
+		ttl = h.cookie.MaxAge
+	}
+	h.writeCookie(c, tokens.RefreshToken, int(ttl.Seconds()))
 }
 
 func (h *Handler) clearCookie(c *gin.Context) {

@@ -108,13 +108,15 @@ func run() int {
 
 	runner := tx.NewRunner(pool)
 	identityModule, err := identity.New(identity.Deps{
-		Tx:              runner,
-		Clock:           clock.System{},
-		JWTSecret:       cfg.JWTAccessSecret,
-		AccessTokenTTL:  cfg.AccessTokenTTL,
-		RefreshTokenTTL: cfg.RefreshTokenTTL,
-		Mailer:          mailQueue,
-		SecureCookies:   cfg.Env != config.Development,
+		Tx:                 runner,
+		Clock:              clock.System{},
+		JWTSecret:          cfg.JWTAccessSecret,
+		AccessTokenTTL:     cfg.AccessTokenTTL,
+		RefreshTokenTTL:    cfg.RefreshTokenTTL,
+		WebRefreshTokenTTL: cfg.WebRefreshTokenTTL,
+		GoogleWebClientID:  cfg.GoogleWebClientID,
+		Mailer:             mailQueue,
+		SecureCookies:      cfg.Env != config.Development,
 	})
 	if err != nil {
 		log.Error("modules", "error", err)

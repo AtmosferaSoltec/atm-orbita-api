@@ -26,6 +26,7 @@ type Users interface {
 
 // Session es un dispositivo con sesión abierta.
 type Session struct {
+	Web       bool
 	ID        uuid.UUID
 	UserID    uuid.UUID
 	UserAgent string
@@ -41,6 +42,7 @@ type RefreshToken struct {
 
 // LockedRefreshToken es un token de renovación bloqueado para usarlo.
 type LockedRefreshToken struct {
+	Web            bool
 	ID             uuid.UUID
 	SessionID      uuid.UUID
 	UserID         uuid.UUID

@@ -124,7 +124,7 @@ func (f fakeSessions) LockRefreshToken(_ context.Context, hash []byte) (LockedRe
 			s := f.m.sessions[t.SessionID]
 			return LockedRefreshToken{
 				ID: t.ID, SessionID: t.SessionID, UserID: s.UserID, ExpiresAt: t.ExpiresAt,
-				Used: t.used, SessionRevoked: s.revoked != "",
+				Used: t.used, SessionRevoked: s.revoked != "", Web: s.Web,
 			}, nil
 		}
 	}

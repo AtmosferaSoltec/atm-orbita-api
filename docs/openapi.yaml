@@ -59,6 +59,100 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
 
+  /auth/google/config:
+    get:
+      summary: Get public Google sign-in configuration
+      operationId: getGoogleSignInConfig
+      security: []
+      responses:
+        "200":
+          description: Empty client_id means Google sign-in is disabled. Never cache this response.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      client_id: { type: string }
+  /auth/google/challenge:
+    post:
+      summary: Create a browser-bound Google sign-in challenge
+      operationId: createGoogleSignInChallenge
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/WebSessionTransport"
+      description: Sets the HttpOnly, SameSite=Strict orbita_google_nonce cookie. The nonce expires in five minutes and is consumed transactionally on successful sign-in. Pass it to Google Identity Services initialize().
+      responses:
+        "200":
+          description: Challenge created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      nonce: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503":
+          description: GOOGLE_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /auth/google:
+    post:
+      summary: Sign in, register or link a Google identity
+      operationId: googleSignIn
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/WebSessionTransport"
+      description: |
+        JSON request with the browser challenge cookie. The API verifies Google's
+        signature, audience, issuer, expiry, verified email and nonce. It uses the
+        Google subject as the external identity. An existing email/password account
+        must confirm its password once; Google-only registrations run the normal
+        profile and ledger hooks. Returns Orbita tokens, with refresh in an HttpOnly
+        cookie. Only a successful exchange consumes the challenge.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credential]
+              properties:
+                credential: { type: string, maxLength: 16384 }
+                password: { type: string, description: Required only to link an existing account }
+                main_currency: { type: string, default: PEN }
+                timezone: { type: string, default: America/Lima }
+      responses:
+        "200":
+          description: Session opened
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "401":
+          description: GOOGLE_INVALID, GOOGLE_CHALLENGE_EXPIRED or INVALID_CREDENTIALS
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: GOOGLE_LINK_REQUIRED, GOOGLE_IDENTITY_CONFLICT or EMAIL_ALREADY_REGISTERED
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503":
+          description: GOOGLE_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
   /auth/register:
     post:
       summary: Crear una cuenta (y su primera sesión)
@@ -1214,6 +1308,12 @@ paths:
         "200": { description: Guardado, content: { application/json: { schema: { $ref: "#/components/schemas/ReceiptLimitResponse" } } } }
         "400": { $ref: "#/components/responses/ValidationFailed" }
 components:
+  parameters:
+    WebSessionTransport:
+      name: X-Session-Transport
+      in: header
+      required: true
+      schema: { type: string, enum: [cookie] }
   responses:
     ResetCodeInvalid:
       description: RESET_CODE_INVALID (código incorrecto, usado, vencido, sin intentos o de un correo sin cuenta)
@@ -1348,6 +1448,9 @@ components:
             `X-Session-Transport: cookie` (la web): entonces llega en la cookie HttpOnly
             `orbita_refresh` (Path=/api/v1/auth, SameSite=Strict), y refresh/logout la leen
             de ahí con la misma cabecera (plan 17).
+            New web sessions use WEB_REFRESH_TOKEN_TTL_DAYS (default 90 days), renewed
+            on each rotation. Native sessions continue using REFRESH_TOKEN_TTL_DAYS.
+            The policy is stored on the session, not selected again at refresh time.
     AuthResponse:
       type: object
       required: [data]

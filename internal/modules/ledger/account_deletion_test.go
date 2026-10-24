@@ -101,6 +101,9 @@ func (h *harness) seedEverything(t *testing.T, token, userID string) {
 		INSERT INTO password_reset_codes (id, user_id, code_hash, expires_at)
 		VALUES (gen_random_uuid(), $1, '\x00', now() + interval '15 minutes')`, userID)
 	require.NoError(t, err)
+	// Linked Google identities must be removed by the same user cascade.
+	_, err = h.pool.Exec(context.Background(), `INSERT INTO external_identities (provider, subject, user_id) VALUES ('google', $1, $2)`, userID, userID)
+	require.NoError(t, err)
 }
 
 func TestDeletingTheAccountLeavesNoRowOfTheUserInAnyTable(t *testing.T) {

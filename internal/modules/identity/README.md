@@ -40,3 +40,12 @@ Cuentas de usuario y sus sesiones: registro, inicio y cierre de sesión, renovac
 | `VALIDATION_FAILED` + `EMAIL_INVALID`, `CODE_INVALID`, `PASSWORD_TOO_SHORT` (campo `new_password`) | 400 | Recuperar la contraseña |
 | `RESET_CODE_INVALID` | 422 | Código incorrecto, usado, vencido, sin intentos o de un correo sin cuenta |
 | `TOO_MANY_REQUESTS` | 429 | Límite por IP, o 5 fallos seguidos con un correo (espera de 1, 5 y 15 minutos), con `Retry-After` |
+
+
+## Google sign-in and web session lifetime (plan 19)
+
+`GET /auth/google/config` exposes the public web client ID. `POST /auth/google/challenge` creates a five-minute browser-bound nonce; `POST /auth/google` validates a Google credential and signs in, registers, or requests the existing password before linking. New Google accounts run the existing transactional registration hooks and have no local password until explicitly set using email-code recovery.
+
+The `GoogleVerifier`, `ExternalIdentities` and `GoogleChallenges` ports live in `app`; official Google verification is in `adapters/security`, persistence in `adapters/postgres`. Provider identity is keyed by Google subject. All tokens after sign-in are Orbita tokens.
+
+New web sessions use `WEB_REFRESH_TOKEN_TTL_DAYS` (90 days by default), selected at creation and stored through `sessions.is_web`. Native and historical sessions keep `REFRESH_TOKEN_TTL_DAYS`. Each refresh rotates and extends the lifetime. See [setup and deployment instructions](../../../docs/plans/19-google-sign-in.md).
