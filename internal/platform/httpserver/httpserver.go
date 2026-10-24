@@ -32,6 +32,9 @@ type Options struct {
 	Logger             *slog.Logger
 	CORSOrigins        []string
 	RateLimitPerMinute int
+	// LargeBodyRoutes son las rutas (relativas a /api/v1, como las monta el
+	// módulo) que aceptan un cuerpo mayor al general, con su límite.
+	LargeBodyRoutes map[string]int64
 }
 
 // NewRouter devuelve Gin con los middlewares comunes y el grupo /api/v1, donde
@@ -52,7 +55,7 @@ func NewRouter(opts Options) (*gin.Engine, *gin.RouterGroup, error) {
 		middleware.Recover(),
 		middleware.AccessLog(),
 		middleware.CORS(opts.CORSOrigins),
-		middleware.BodyLimit(maxBodyBytes),
+		middleware.BodyLimit(maxBodyBytes, prefixed(opts.LargeBodyRoutes)),
 		middleware.NewRateLimiter(opts.RateLimitPerMinute).Middleware(),
 	)
 	router.NoRoute(func(c *gin.Context) { apierror.Respond(c, apierror.ErrNotFound) })
@@ -95,4 +98,12 @@ func Serve(ctx context.Context, handler http.Handler, port string, log *slog.Log
 		return fmt.Errorf("shutdown: %w", err)
 	}
 	return nil
+}
+
+func prefixed(routes map[string]int64) map[string]int64 {
+	out := make(map[string]int64, len(routes))
+	for route, limit := range routes {
+		out[APIPrefix+route] = limit
+	}
+	return out
 }

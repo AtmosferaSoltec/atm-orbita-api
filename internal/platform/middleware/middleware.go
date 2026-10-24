@@ -106,9 +106,14 @@ func CORS(allowed []string) gin.HandlerFunc {
 }
 
 // BodyLimit corta los cuerpos más grandes que limit; al leerlos, el handler
-// recibe un *http.MaxBytesError que apierror traduce a 413.
-func BodyLimit(limit int64) gin.HandlerFunc {
+// recibe un *http.MaxBytesError que apierror traduce a 413. larger da un límite
+// propio a rutas puntuales (la subida de archivos), por su ruta de Gin.
+func BodyLimit(limit int64, larger map[string]int64) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		limit := limit
+		if routeLimit, ok := larger[c.FullPath()]; ok {
+			limit = routeLimit
+		}
 		if c.Request.ContentLength > limit {
 			apierror.Respond(c, apierror.ErrPayloadTooLarge)
 			return
