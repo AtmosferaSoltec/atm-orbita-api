@@ -53,6 +53,8 @@ type Deps struct {
 	// Background corre trabajo fuera de la petición; vacío usa una goroutine. Las
 	// pruebas lo hacen síncrono.
 	Background func(func())
+	// SecureCookies marca Secure la cookie de sesión de la web (todo menos desarrollo).
+	SecureCookies bool
 }
 
 // Module arma el módulo con sus adaptadores.
@@ -83,7 +85,8 @@ func New(deps Deps) (*Module, error) {
 	if err != nil {
 		return nil, fmt.Errorf("identity: %w", err)
 	}
-	return &Module{service: service, handler: identityhttp.NewHandler(service)}, nil
+	cookie := identityhttp.CookieOptions{Secure: deps.SecureCookies, MaxAge: deps.RefreshTokenTTL}
+	return &Module{service: service, handler: identityhttp.NewHandler(service, cookie)}, nil
 }
 
 // Routes monta las rutas del módulo.

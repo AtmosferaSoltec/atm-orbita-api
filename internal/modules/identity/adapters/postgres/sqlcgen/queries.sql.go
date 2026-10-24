@@ -102,18 +102,24 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 }
 
 const createUser = `-- name: CreateUser :exec
-INSERT INTO users (id, email, password_hash)
-VALUES ($1, $2, $3)
+INSERT INTO users (id, email, password_hash, name)
+VALUES ($1, $2, $3, $4)
 `
 
 type CreateUserParams struct {
 	ID           uuid.UUID
 	Email        string
 	PasswordHash string
+	Name         *string
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
-	_, err := q.db.Exec(ctx, createUser, arg.ID, arg.Email, arg.PasswordHash)
+	_, err := q.db.Exec(ctx, createUser,
+		arg.ID,
+		arg.Email,
+		arg.PasswordHash,
+		arg.Name,
+	)
 	return err
 }
 
@@ -146,7 +152,7 @@ func (q *Queries) DiscardResetCodes(ctx context.Context, arg DiscardResetCodesPa
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, created_at
+SELECT id, email, password_hash, name, created_at
 FROM users
 WHERE email = $1
 `
@@ -155,6 +161,7 @@ type GetUserByEmailRow struct {
 	ID           uuid.UUID
 	Email        string
 	PasswordHash string
+	Name         *string
 	CreatedAt    time.Time
 }
 
@@ -165,13 +172,14 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 		&i.ID,
 		&i.Email,
 		&i.PasswordHash,
+		&i.Name,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, created_at
+SELECT id, email, password_hash, name, created_at
 FROM users
 WHERE id = $1
 `
@@ -180,6 +188,7 @@ type GetUserByIDRow struct {
 	ID           uuid.UUID
 	Email        string
 	PasswordHash string
+	Name         *string
 	CreatedAt    time.Time
 }
 
@@ -190,6 +199,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (GetUserByIDRow
 		&i.ID,
 		&i.Email,
 		&i.PasswordHash,
+		&i.Name,
 		&i.CreatedAt,
 	)
 	return i, err

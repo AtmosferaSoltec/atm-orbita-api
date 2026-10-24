@@ -45,3 +45,16 @@ func TestPasswordLength(t *testing.T) {
 		}
 	}
 }
+
+func TestNameIsTrimmedAndOptional(t *testing.T) {
+	assert.Equal(t, "Joel Maldonado", *NormalizeName("  Joel   Maldonado "))
+	assert.Nil(t, NormalizeName("   "))
+
+	var problems ValidationError
+	ValidateName(NormalizeName(strings.Repeat("ñ", NameMaxLength)), &problems)
+	ValidateName(nil, &problems)
+	assert.NoError(t, problems.OrNil())
+
+	ValidateName(NormalizeName(strings.Repeat("a", NameMaxLength+1)), &problems)
+	assert.Equal(t, []FieldError{{Field: "name", Code: CodeNameTooLong}}, problems.Fields)
+}

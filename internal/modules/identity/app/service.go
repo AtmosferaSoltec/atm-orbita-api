@@ -102,6 +102,7 @@ type AuthResult struct {
 // RegisterInput son los datos del formulario de registro.
 type RegisterInput struct {
 	Email        string
+	Name         string
 	Password     string
 	MainCurrency string
 	Timezone     string
@@ -112,6 +113,7 @@ type RegisterInput struct {
 // en una sola transacción.
 func (s *Service) Register(ctx context.Context, in RegisterInput) (AuthResult, error) {
 	email := domain.NormalizeEmail(in.Email)
+	name := domain.NormalizeName(in.Name)
 	mainCurrency := in.MainCurrency
 	if mainCurrency == "" {
 		mainCurrency = currency.Default
@@ -120,6 +122,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (AuthResult, e
 	var problems domain.ValidationError
 	domain.ValidateEmail(email, &problems)
 	domain.ValidateNewPassword(in.Password, &problems)
+	domain.ValidateName(name, &problems)
 	if !currency.IsSupported(mainCurrency) {
 		problems.Add("main_currency", domain.CodeCurrencyNotSupported)
 	}
@@ -133,7 +136,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (AuthResult, e
 	}
 
 	now := s.deps.Clock.Now()
-	user := domain.User{ID: ids.New(), Email: email, PasswordHash: hash, CreatedAt: now}
+	user := domain.User{ID: ids.New(), Email: email, Name: name, PasswordHash: hash, CreatedAt: now}
 	var tokens Tokens
 	err = s.deps.Tx.InTx(ctx, func(ctx context.Context) error {
 		if err := s.deps.Users.Create(ctx, user); err != nil {

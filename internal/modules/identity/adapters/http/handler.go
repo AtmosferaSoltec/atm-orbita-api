@@ -50,10 +50,13 @@ var (
 // Handler atiende las rutas de autenticación.
 type Handler struct {
 	service Service
+	cookie  CookieOptions
 }
 
 // NewHandler crea el handler.
-func NewHandler(service Service) *Handler { return &Handler{service: service} }
+func NewHandler(service Service, cookie CookieOptions) *Handler {
+	return &Handler{service: service, cookie: cookie}
+}
 
 // Routes monta las rutas. public no exige token; limited son las públicas con
 // el límite estrecho de LOGIN_RATE_LIMIT_PER_MINUTE; protected exige token.
@@ -72,6 +75,7 @@ func (h *Handler) Routes(public, limited, protected gin.IRoutes) {
 
 type registerRequest struct {
 	Email        string `json:"email"`
+	Name         string `json:"name"`
 	Password     string `json:"password"`
 	MainCurrency string `json:"main_currency"`
 	Timezone     string `json:"timezone"`
@@ -89,13 +93,15 @@ type refreshRequest struct {
 type userResponse struct {
 	ID        uuid.UUID `json:"id"`
 	Email     string    `json:"email"`
+	Name      *string   `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// RefreshToken va vacío (y se omite) cuando viaja en la cookie de la web.
 type tokensResponse struct {
 	AccessToken          string `json:"access_token"`
 	AccessTokenExpiresIn int    `json:"access_token_expires_in"`
-	RefreshToken         string `json:"refresh_token"`
+	RefreshToken         string `json:"refresh_token,omitempty"`
 }
 
 type authResponse struct {
@@ -109,14 +115,14 @@ func (h *Handler) register(c *gin.Context) {
 		return
 	}
 	result, err := h.service.Register(c.Request.Context(), app.RegisterInput{
-		Email: req.Email, Password: req.Password, MainCurrency: req.MainCurrency,
+		Email: req.Email, Name: req.Name, Password: req.Password, MainCurrency: req.MainCurrency,
 		Timezone: req.Timezone, UserAgent: c.Request.UserAgent(),
 	})
 	if err != nil {
 		respondError(c, err)
 		return
 	}
-	apierror.Created(c, toAuthResponse(result))
+	apierror.Created(c, toAuthResponse(h.deliverRefreshToken(c, result)))
 }
 
 func (h *Handler) login(c *gin.Context) {
@@ -131,32 +137,66 @@ func (h *Handler) login(c *gin.Context) {
 		respondError(c, err)
 		return
 	}
-	apierror.OK(c, toAuthResponse(result))
+	apierror.OK(c, toAuthResponse(h.deliverRefreshToken(c, result)))
 }
 
 func (h *Handler) refresh(c *gin.Context) {
-	var req refreshRequest
-	if !bind(c, &req) {
+	token, ok := h.refreshTokenOf(c)
+	if !ok {
 		return
 	}
-	tokens, err := h.service.Refresh(c.Request.Context(), req.RefreshToken)
+	tokens, err := h.service.Refresh(c.Request.Context(), token)
 	if err != nil {
+		if errors.Is(err, domain.ErrSessionExpired) && usesCookie(c) {
+			h.clearCookie(c)
+		}
 		respondError(c, err)
 		return
+	}
+	if usesCookie(c) {
+		h.setCookie(c, tokens.RefreshToken)
+		tokens.RefreshToken = ""
 	}
 	apierror.OK(c, gin.H{"tokens": toTokens(tokens)})
 }
 
 func (h *Handler) logout(c *gin.Context) {
-	var req refreshRequest
-	if !bind(c, &req) {
+	token, ok := h.refreshTokenOf(c)
+	if !ok {
 		return
 	}
-	if err := h.service.Logout(c.Request.Context(), req.RefreshToken); err != nil {
+	if usesCookie(c) {
+		h.clearCookie(c)
+	}
+	if err := h.service.Logout(c.Request.Context(), token); err != nil {
 		respondError(c, err)
 		return
 	}
 	apierror.NoContent(c)
+}
+
+// refreshTokenOf lee el token de renovación: de la cookie si la petición es de
+// la web, del cuerpo si no.
+func (h *Handler) refreshTokenOf(c *gin.Context) (string, bool) {
+	if usesCookie(c) {
+		token, _ := c.Cookie(RefreshCookieName)
+		return token, true
+	}
+	var req refreshRequest
+	if !bind(c, &req) {
+		return "", false
+	}
+	return req.RefreshToken, true
+}
+
+// deliverRefreshToken pone el token en la cookie cuando la petición es de la web
+// y lo saca del cuerpo, para que JavaScript nunca lo vea.
+func (h *Handler) deliverRefreshToken(c *gin.Context, result app.AuthResult) app.AuthResult {
+	if usesCookie(c) {
+		h.setCookie(c, result.Tokens.RefreshToken)
+		result.Tokens.RefreshToken = ""
+	}
+	return result
 }
 
 func (h *Handler) me(c *gin.Context) {
@@ -217,7 +257,7 @@ func toAuthResponse(result app.AuthResult) authResponse {
 }
 
 func toUser(user domain.User) userResponse {
-	return userResponse{ID: user.ID, Email: user.Email, CreatedAt: user.CreatedAt.UTC()}
+	return userResponse{ID: user.ID, Email: user.Email, Name: user.Name, CreatedAt: user.CreatedAt.UTC()}
 }
 
 func toTokens(tokens app.Tokens) tokensResponse {

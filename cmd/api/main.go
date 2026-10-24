@@ -111,6 +111,7 @@ func run() int {
 		AccessTokenTTL:  cfg.AccessTokenTTL,
 		RefreshTokenTTL: cfg.RefreshTokenTTL,
 		Mailer:          mailQueue,
+		SecureCookies:   cfg.Env != config.Development,
 	})
 	if err != nil {
 		log.Error("modules", "error", err)

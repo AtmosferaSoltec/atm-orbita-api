@@ -1,14 +1,14 @@
 -- name: CreateUser :exec
-INSERT INTO users (id, email, password_hash)
-VALUES ($1, $2, $3);
+INSERT INTO users (id, email, password_hash, name)
+VALUES ($1, $2, $3, $4);
 
 -- name: GetUserByEmail :one
-SELECT id, email, password_hash, created_at
+SELECT id, email, password_hash, name, created_at
 FROM users
 WHERE email = $1;
 
 -- name: GetUserByID :one
-SELECT id, email, password_hash, created_at
+SELECT id, email, password_hash, name, created_at
 FROM users
 WHERE id = $1;
 

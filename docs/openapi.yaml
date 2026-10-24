@@ -78,6 +78,7 @@ paths:
               properties:
                 email: { type: string, format: email, maxLength: 254 }
                 password: { type: string, minLength: 8, maxLength: 128 }
+                name: { type: string, maxLength: 60, description: "Opcional (plan 17): la web lo pide, Android todavía no. Vacío = sin nombre; más de 60 = NAME_TOO_LONG" }
                 main_currency: { type: string, description: "Del catálogo; por defecto PEN", example: PEN }
                 timezone: { type: string, description: "Zona IANA; inválida o ausente = America/Lima", example: America/Lima }
       responses:
@@ -1094,18 +1095,25 @@ components:
   schemas:
     User:
       type: object
-      required: [id, email, created_at]
+      required: [id, email, name, created_at]
       properties:
         id: { type: string, format: uuid }
         email: { type: string }
+        name: { type: string, nullable: true, description: "null si la cuenta no tiene nombre" }
         created_at: { type: string, format: date-time }
     Tokens:
       type: object
-      required: [access_token, access_token_expires_in, refresh_token]
+      required: [access_token, access_token_expires_in]
       properties:
         access_token: { type: string, description: "JWT HS256; va en Authorization: Bearer" }
         access_token_expires_in: { type: integer, description: Segundos, example: 900 }
-        refresh_token: { type: string, description: "Opaco; guardarlo cifrado en el dispositivo" }
+        refresh_token:
+          type: string
+          description: |
+            Opaco; guardarlo cifrado en el dispositivo. No viene cuando la petición trae
+            `X-Session-Transport: cookie` (la web): entonces llega en la cookie HttpOnly
+            `orbita_refresh` (Path=/api/v1/auth, SameSite=Strict), y refresh/logout la leen
+            de ahí con la misma cabecera (plan 17).
     AuthResponse:
       type: object
       required: [data]

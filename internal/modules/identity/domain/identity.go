@@ -19,6 +19,7 @@ const (
 	PasswordMinLength = 8
 	PasswordMaxLength = 128
 	EmailMaxLength    = 254
+	NameMaxLength     = 60
 )
 
 // El mismo patrón que validateEmail de Android (domain/model/Drafts.kt).
@@ -31,6 +32,7 @@ const (
 	CodePasswordTooLong      = "PASSWORD_TOO_LONG"
 	CodePasswordRequired     = "PASSWORD_REQUIRED"
 	CodeCurrencyNotSupported = "CURRENCY_NOT_SUPPORTED"
+	CodeNameTooLong          = "NAME_TOO_LONG"
 	CodeInvalidFormat        = "INVALID_FORMAT"
 )
 
@@ -82,8 +84,10 @@ func (e *ValidationError) OrNil() error {
 
 // User es una cuenta de usuario.
 type User struct {
-	ID           uuid.UUID
-	Email        string
+	ID    uuid.UUID
+	Email string
+	// Name es opcional: la web lo pide, Android todavía no (plan 17).
+	Name         *string
 	PasswordHash string
 	CreatedAt    time.Time
 }
@@ -108,5 +112,21 @@ func ValidateNewPassword(password string, problems *ValidationError) {
 		problems.Add("password", CodePasswordTooShort)
 	case length > PasswordMaxLength:
 		problems.Add("password", CodePasswordTooLong)
+	}
+}
+
+// NormalizeName recorta espacios; un nombre vacío es "sin nombre".
+func NormalizeName(name string) *string {
+	trimmed := strings.Join(strings.Fields(name), " ")
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+// ValidateName recibe el nombre ya normalizado.
+func ValidateName(name *string, problems *ValidationError) {
+	if name != nil && utf8.RuneCountInString(*name) > NameMaxLength {
+		problems.Add("name", CodeNameTooLong)
 	}
 }

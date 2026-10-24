@@ -37,7 +37,7 @@ func (r Users) q(ctx context.Context) *sqlcgen.Queries { return sqlcgen.New(r.db
 // Create guarda la cuenta; el índice único sobre email decide si ya existe.
 func (r Users) Create(ctx context.Context, user domain.User) error {
 	err := r.q(ctx).CreateUser(ctx, sqlcgen.CreateUserParams{
-		ID: user.ID, Email: user.Email, PasswordHash: user.PasswordHash,
+		ID: user.ID, Email: user.Email, PasswordHash: user.PasswordHash, Name: user.Name,
 	})
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
@@ -55,7 +55,7 @@ func (r Users) ByEmail(ctx context.Context, email string) (domain.User, error) {
 	if err != nil {
 		return domain.User{}, err
 	}
-	return domain.User{ID: row.ID, Email: row.Email, PasswordHash: row.PasswordHash, CreatedAt: row.CreatedAt}, nil
+	return domain.User{ID: row.ID, Email: row.Email, Name: row.Name, PasswordHash: row.PasswordHash, CreatedAt: row.CreatedAt}, nil
 }
 
 // ByID busca una cuenta por su id.
@@ -67,7 +67,7 @@ func (r Users) ByID(ctx context.Context, id uuid.UUID) (domain.User, error) {
 	if err != nil {
 		return domain.User{}, err
 	}
-	return domain.User{ID: row.ID, Email: row.Email, PasswordHash: row.PasswordHash, CreatedAt: row.CreatedAt}, nil
+	return domain.User{ID: row.ID, Email: row.Email, Name: row.Name, PasswordHash: row.PasswordHash, CreatedAt: row.CreatedAt}, nil
 }
 
 // TouchLastLogin registra el último inicio de sesión.

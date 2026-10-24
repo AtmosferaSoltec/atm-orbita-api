@@ -89,11 +89,13 @@ func CORS(allowed []string) gin.HandlerFunc {
 		if origin != "" && slices.Contains(allowed, origin) {
 			h := c.Writer.Header()
 			h.Set("Access-Control-Allow-Origin", origin)
+			// La web manda la cookie de sesión (plan 17).
+			h.Set("Access-Control-Allow-Credentials", "true")
 			h.Add("Vary", "Origin")
 			h.Set("Access-Control-Expose-Headers", RequestIDHeader+", Retry-After")
 			if c.Request.Method == http.MethodOptions {
 				h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-				h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, "+RequestIDHeader)
+				h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Session-Transport, "+RequestIDHeader)
 				h.Set("Access-Control-Max-Age", "600")
 				c.AbortWithStatus(http.StatusNoContent)
 				return
