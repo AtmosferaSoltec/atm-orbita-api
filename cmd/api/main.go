@@ -30,6 +30,7 @@ import (
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/profile"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/receipts"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/reports"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/services"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/auth"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/clock"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/config"
@@ -139,6 +140,7 @@ func run() int {
 		log.Warn("storage not configured: receipt files are disabled")
 	}
 	receiptsModule := receipts.New(runner, clock.System{}, profileModule.Reader(), files)
+	servicesModule := services.New(runner, clock.System{}, profileModule.Reader())
 	identityModule.OnUserDeleted(receiptsModule.OnUserDeleted)
 
 	// El alta corre en una sola transacción: cuenta, sesión y, por cada módulo, lo
@@ -160,6 +162,7 @@ func run() int {
 	creditModule.Routes(protected)
 	homeModule.Routes(protected)
 	receiptsModule.Routes(protected)
+	servicesModule.Routes(protected)
 
 	if err := httpserver.Serve(ctx, router, cfg.Port, log); err != nil {
 		log.Error("server", "error", err)

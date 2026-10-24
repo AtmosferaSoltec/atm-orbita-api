@@ -101,6 +101,17 @@ func (h *harness) seedEverything(t *testing.T, token, userID string) {
 		INSERT INTO password_reset_codes (id, user_id, code_hash, expires_at)
 		VALUES (gen_random_uuid(), $1, '\x00', now() + interval '15 minutes')`, userID)
 	require.NoError(t, err)
+	// Services, members and their payments are removed by the user cascade.
+	_, err = h.pool.Exec(context.Background(), `
+ WITH new_service AS (
+  INSERT INTO services(id,user_id,name,color,currency,amount,billing_day,started_on,status,shared)
+  VALUES(gen_random_uuid(),$1,'Deletion probe','#1D4ED8','PEN',30,10,'2026-01-01','active',true) RETURNING id,user_id
+ ), new_member AS (
+  INSERT INTO service_members(id,service_id,user_id,name,amount,since_month)
+  SELECT gen_random_uuid(),id,user_id,'Probe member',10,'2026-01-01' FROM new_service RETURNING id,service_id,user_id
+ ) INSERT INTO service_member_payments(id,service_id,user_id,member_id,month,paid_on,amount)
+ SELECT gen_random_uuid(),service_id,user_id,id,'2026-01-01','2026-01-10',10 FROM new_member`, userID)
+	require.NoError(t, err)
 	// Linked Google identities must be removed by the same user cascade.
 	_, err = h.pool.Exec(context.Background(), `INSERT INTO external_identities (provider, subject, user_id) VALUES ('google', $1, $2)`, userID, userID)
 	require.NoError(t, err)

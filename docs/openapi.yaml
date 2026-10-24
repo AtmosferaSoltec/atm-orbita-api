@@ -59,6 +59,126 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
 
+  /services:
+    get:
+      summary: List the current user's monthly services with members and payments
+      operationId: listServices
+      responses:
+        "200":
+          description: All subscriptions; the local date follows the profile timezone
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Service" } }
+                  meta:
+                    type: object
+                    properties:
+                      today: { type: string, format: date }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Create a monthly service and its manual member shares
+      operationId: createService
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ServiceInput" }
+      responses:
+        "201": { $ref: "#/components/responses/ServiceSuccess" }
+        "200": { $ref: "#/components/responses/ServiceSuccess" }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "409":
+          description: ID_CONFLICT
+  /services/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Open a service owned by the current user
+      operationId: getService
+      responses:
+        "200": { $ref: "#/components/responses/ServiceSuccess" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Replace service fields and member list atomically
+      description: Currency changes with recorded payments return SERVICE_CURRENCY_LOCKED. Removed members and their payments are deleted. IDs belonging to another service cannot be attached.
+      operationId: updateService
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ServiceInput" }
+      responses:
+        "200": { $ref: "#/components/responses/ServiceSuccess" }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: SERVICE_CURRENCY_LOCKED or ID_CONFLICT
+    delete:
+      summary: Delete a service and cascade its members and payments
+      operationId: deleteService
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /services/{id}/payments:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      summary: Record a batch of member reimbursements atomically
+      operationId: recordServicePayments
+      description: The amount comes from the member's stored share. Existing member/month payments remain unchanged on retry. Future or inapplicable months and paused services are rejected.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payments]
+              properties:
+                payments:
+                  type: array
+                  minItems: 1
+                  maxItems: 1200
+                  items:
+                    type: object
+                    required: [member_id, month, paid_on]
+                    properties:
+                      member_id: { type: string, format: uuid }
+                      month: { type: string, pattern: '^\d{4}-\d{2}$' }
+                      paid_on: { type: string, format: date }
+      responses:
+        "200": { $ref: "#/components/responses/ServiceSuccess" }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /services/{id}/members/{member_id}/payments/{month}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: member_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: month
+        in: path
+        required: true
+        schema: { type: string, pattern: '^\d{4}-\d{2}$' }
+    delete:
+      summary: Undo a member's monthly payment
+      operationId: undoServicePayment
+      responses:
+        "200": { $ref: "#/components/responses/ServiceSuccess" }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /auth/google/config:
     get:
       summary: Get public Google sign-in configuration
@@ -1315,6 +1435,14 @@ components:
       required: true
       schema: { type: string, enum: [cookie] }
   responses:
+    ServiceSuccess:
+      description: Persisted service with members and payments
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data: { $ref: "#/components/schemas/Service" }
     ResetCodeInvalid:
       description: RESET_CODE_INVALID (código incorrecto, usado, vencido, sin intentos o de un correo sin cuenta)
       content:
@@ -1376,6 +1504,51 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    ServiceMemberInput:
+      type: object
+      required: [id, name, amount, since]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 60 }
+        amount: { $ref: "#/components/schemas/Money" }
+        since: { type: string, pattern: '^\d{4}-\d{2}$', description: First month this person owes; not before service start month }
+    ServiceInput:
+      type: object
+      required: [name, color, currency, amount, billing_day, started_on, status, shared]
+      properties:
+        id: { type: string, format: uuid, description: Stable creation ID for idempotent retries }
+        name: { type: string, minLength: 1, maxLength: 60 }
+        color: { type: string, pattern: '^#[0-9a-fA-F]{6}$' }
+        currency: { type: string, enum: [PEN, USD] }
+        amount: { $ref: "#/components/schemas/Money" }
+        billing_day: { type: integer, minimum: 1, maximum: 31 }
+        started_on: { type: string, format: date }
+        status: { type: string, enum: [active, paused, cancelled] }
+        ended_on: { type: string, format: date, nullable: true, description: Required for cancelled services; cannot precede start }
+        note: { type: string, maxLength: 500 }
+        shared: { type: boolean }
+        members:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/ServiceMemberInput" }
+    Service:
+      allOf:
+        - $ref: "#/components/schemas/ServiceInput"
+        - type: object
+          required: [id, created_at, members, member_payments]
+          properties:
+            created_at: { type: string, format: date-time }
+            member_payments:
+              type: array
+              items:
+                type: object
+                required: [id, member_id, month, paid_on, amount]
+                properties:
+                  id: { type: string, format: uuid }
+                  member_id: { type: string, format: uuid }
+                  month: { type: string, pattern: '^\d{4}-\d{2}$' }
+                  paid_on: { type: string, format: date }
+                  amount: { $ref: "#/components/schemas/Money" }
     ReceiptClient:
       type: object
       required: [name, doc_type]

@@ -106,3 +106,13 @@ sql:
         out: ../internal/modules/receipts/adapters/postgres/sqlcgen
         sql_package: pgx/v5
         emit_pointers_for_null_types: true
+  - engine: postgresql
+    schema:
+      - migrations/00014_services_create_subscriptions.sql
+    queries: ../internal/modules/services/adapters/postgres/queries.sql
+    gen:
+      go:
+        package: sqlcgen
+        out: ../internal/modules/services/adapters/postgres/sqlcgen
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
