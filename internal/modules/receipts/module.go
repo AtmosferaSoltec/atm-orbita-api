@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -71,6 +72,14 @@ type fileStorage struct{ files storage.Storage }
 
 func (f fileStorage) Put(ctx context.Context, key, contentType string, data []byte) error {
 	return translate(f.files.Put(ctx, key, contentType, bytes.NewReader(data), int64(len(data))))
+}
+
+func (f fileStorage) Open(ctx context.Context, key string) (io.ReadCloser, error) {
+	body, err := f.files.Get(ctx, key)
+	if errors.Is(err, storage.ErrNotFound) {
+		return nil, domain.ErrNotFound
+	}
+	return body, translate(err)
 }
 
 func (f fileStorage) Delete(ctx context.Context, keys ...string) error {

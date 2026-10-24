@@ -1173,6 +1173,22 @@ paths:
                       url: { type: string }
                       expires_in: { type: integer, example: 300 }
         "404": { $ref: "#/components/responses/NotFound" }
+  /receipts/{id}/documents/{kind}/content:
+    get:
+      summary: El archivo, para verlo dentro de la web (XML formateado, PDF embebido)
+      description: Lo sirve el API porque leerlo desde la URL firmada pediría CORS en el bucket (plan 18, desviaciones).
+      operationId: receiptDocumentContent
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: kind, in: path, required: true, schema: { type: string, enum: [xml, pdf] } }
+      responses:
+        "200":
+          description: El archivo
+          content:
+            application/xml: { schema: { type: string } }
+            application/pdf: { schema: { type: string, format: binary } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { description: STORAGE_UNAVAILABLE, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
   /receipt-limits/{year}:
     parameters:
       - { name: year, in: path, required: true, schema: { type: integer, example: 2026 } }

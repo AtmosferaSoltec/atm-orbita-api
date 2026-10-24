@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"strconv"
 	"time"
@@ -34,6 +35,7 @@ type Service interface {
 	SetLimit(ctx context.Context, userID uuid.UUID, year int, amount money.Amount) (app.Limit, error)
 	Upload(ctx context.Context, userID, receiptID uuid.UUID, kind domain.DocumentKind, fileName string, data []byte) (domain.Document, error)
 	DownloadURL(ctx context.Context, userID, receiptID uuid.UUID, kind domain.DocumentKind, download bool) (string, error)
+	Content(ctx context.Context, userID, receiptID uuid.UUID, kind domain.DocumentKind) (domain.Document, io.ReadCloser, error)
 	DeleteDocument(ctx context.Context, userID, receiptID uuid.UUID, kind domain.DocumentKind) error
 }
 
@@ -71,6 +73,7 @@ func (h *Handler) Routes(protected gin.IRoutes) {
 	protected.DELETE("/receipts/:id", h.delete)
 	protected.PUT(UploadPath, h.upload)
 	protected.GET("/receipts/:id/documents/:kind/url", h.downloadURL)
+	protected.GET("/receipts/:id/documents/:kind/content", h.content)
 	protected.DELETE("/receipts/:id/documents/:kind", h.deleteDocument)
 	protected.GET("/receipt-limits/:year", h.getLimit)
 	protected.PUT("/receipt-limits/:year", h.setLimit)
@@ -334,6 +337,25 @@ func (h *Handler) downloadURL(c *gin.Context) {
 		return
 	}
 	apierror.OK(c, gin.H{"url": url, "expires_in": int(app.DownloadURLTTL.Seconds())})
+}
+
+// content entrega el archivo para verlo dentro de la web.
+func (h *Handler) content(c *gin.Context) {
+	id, kind, ok := documentParams(c)
+	if !ok {
+		return
+	}
+	doc, body, err := h.service.Content(c.Request.Context(), userID(c), id, kind)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	defer func() { _ = body.Close() }()
+	c.DataFromReader(http.StatusOK, int64(doc.SizeBytes), doc.ContentType, body, map[string]string{
+		"Content-Disposition":    mime.FormatMediaType("inline", map[string]string{"filename": doc.FileName}),
+		"Cache-Control":          "private, no-store",
+		"X-Content-Type-Options": "nosniff",
+	})
 }
 
 func (h *Handler) deleteDocument(c *gin.Context) {

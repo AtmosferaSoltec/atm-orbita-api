@@ -341,3 +341,26 @@ func TestDeletingTheAccountDeletesItsFiles(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, res.status, res.body)
 	assert.Empty(t, h.files.Keys())
 }
+
+func TestDocumentContentIsServedForViewing(t *testing.T) {
+	h := newHarness(t)
+	token := h.register(t)
+	id := h.createReceipt(t, token, "109")["id"].(string)
+	require.Equal(t, http.StatusOK, h.upload(t, token, id, "xml", "RHE.xml", receiptXML("E001-109")).status)
+
+	get := func(token string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/receipts/"+id+"/documents/xml/content", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		h.router.ServeHTTP(rec, req)
+		return rec
+	}
+	rec := get(token)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/xml", rec.Header().Get("Content-Type"))
+	assert.Contains(t, rec.Header().Get("Content-Disposition"), `filename=RHE.xml`)
+	assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
+	assert.Contains(t, rec.Body.String(), "<cbc:ID>E001-109</cbc:ID>")
+
+	assert.Equal(t, http.StatusNotFound, get(h.register(t)).Code, "another person cannot read it")
+}

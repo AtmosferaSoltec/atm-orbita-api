@@ -62,6 +62,7 @@ Llave en R2: `receipts/{user_id}/{receipt_id}/{document_id}.{xml|pdf}` (con el u
 | `PUT /receipt-limits/:year` | `{ "amount": "48000.00" }` | `400 AMOUNT_INVALID` |
 | `PUT /receipts/:id/documents/:kind` | `multipart/form-data`, campo `file`. Sube a R2 y reemplaza el anterior | `400 FILE_INVALID` · `413` · `404` · `422 XML_RECEIPT_MISMATCH` · `503 STORAGE_UNAVAILABLE` |
 | `GET /receipts/:id/documents/:kind/url` | URL firmada de R2 por 5 minutos: `{ "url", "expires_in" }`. `?download=1` la entrega como descarga | `404` |
+| `GET /receipts/:id/documents/:kind/content` | El archivo, para verlo **dentro** de la web (XML formateado, PDF embebido). `Cache-Control: private, no-store` | `404` · `503` |
 | `DELETE /receipts/:id/documents/:kind` | Quita el archivo | `404` |
 
 Cuerpo de un recibo (crear/editar y respuesta):
@@ -82,7 +83,8 @@ Códigos de campo (validación): `SERIES_REQUIRED`, `NUMBER_REQUIRED`, `ISSUE_DA
 ## Archivos y R2
 
 - **Subida a través del API** (multipart): así el API valida el contenido (XML del recibo, PDF real) antes de guardarlo. El límite general de 1 MB del cuerpo se amplía a 6 MB **solo** en esa ruta.
-- **Descarga con URL firmada** de corta duración (AGENT_GUIDE §9): el navegador baja el archivo directo de R2. Para que la web pueda leer el XML con `fetch`, el bucket `orbita` (solo de Orbita) tiene CORS con `GET` para los orígenes de la web.
+- **Descarga y "abrir en otra pestaña" con URL firmada** de corta duración (AGENT_GUIDE §9): el navegador baja el archivo directo de R2 (una navegación no necesita CORS).
+- **Ver dentro de la página** (XML formateado, PDF embebido): `…/content`, servido por el API (ver desviaciones).
 - Borrar un recibo, un archivo o la cuenta borra los objetos **después** de confirmar la transacción; si R2 falla se registra en el log (queda un objeto huérfano, nunca un dato a medias).
 - Sin `R2_*` configurado (pruebas), las rutas de archivos responden `503 STORAGE_UNAVAILABLE` y el resto funciona.
 
@@ -98,4 +100,7 @@ Códigos de campo (validación): `SERIES_REQUIRED`, `NUMBER_REQUIRED`, `ISSUE_DA
 
 ## Desviaciones
 
-_(se anotan al terminar)_
+| Qué | Motivo |
+|---|---|
+| `GET …/documents/:kind/content` sirve el archivo a través del API, además de la URL firmada | Para leer el XML con `fetch` (y embeber el PDF) desde la web, R2 tendría que responder con CORS. La llave de R2 del `.env` solo tiene permisos de objetos: `GetBucketCors`/`PutBucketCors` dan `403 AccessDenied`. Los archivos son chicos (1 MB / 5 MB) y la ruta exige sesión y `no-store`. Si más adelante se configura CORS en el bucket desde el panel de Cloudflare, la web puede volver a usar solo la URL firmada |
+| `scripts/dev.sh` | Para correr el API en local contra la base del VPS por túnel SSH (pedido del usuario); carga `.env` sin romperse con valores como `MAIL_FROM` |

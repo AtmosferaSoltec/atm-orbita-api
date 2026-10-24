@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -62,6 +63,20 @@ func (r *R2) Put(ctx context.Context, key, contentType string, body io.Reader, s
 		return fmt.Errorf("r2 put %s: %w", key, err)
 	}
 	return nil
+}
+
+// Get abre un objeto. El contexto de la petición acota la lectura: no se le
+// pone un timeout propio porque el cuerpo se sigue leyendo después de volver.
+func (r *R2) Get(ctx context.Context, key string) (io.ReadCloser, error) {
+	out, err := r.client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(r.bucket), Key: aws.String(key)})
+	var missing *types.NoSuchKey
+	if errors.As(err, &missing) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("r2 get %s: %w", key, err)
+	}
+	return out.Body, nil
 }
 
 // Delete borra objetos (de a 1000 por llamada).

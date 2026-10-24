@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/url"
@@ -35,6 +36,17 @@ func (m *Memory) Put(_ context.Context, key, contentType string, body io.Reader,
 	defer m.mu.Unlock()
 	m.objects[key] = MemoryObject{ContentType: contentType, Data: data}
 	return nil
+}
+
+// Get devuelve el objeto.
+func (m *Memory) Get(_ context.Context, key string) (io.ReadCloser, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	object, ok := m.objects[key]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	return io.NopCloser(bytes.NewReader(object.Data)), nil
 }
 
 // Delete borra las llaves.
@@ -73,8 +85,8 @@ func (m *Memory) PresignGet(_ context.Context, key string, _ time.Duration, opts
 	return "memory://" + key + "?" + query.Encode(), nil
 }
 
-// Get devuelve un objeto guardado (para las aserciones de las pruebas).
-func (m *Memory) Get(key string) (MemoryObject, bool) {
+// Object devuelve un objeto guardado (para las aserciones de las pruebas).
+func (m *Memory) Object(key string) (MemoryObject, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	object, ok := m.objects[key]

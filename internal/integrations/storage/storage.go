@@ -27,6 +27,8 @@ type GetOptions struct {
 // Storage es el puerto que usan los módulos.
 type Storage interface {
 	Put(ctx context.Context, key, contentType string, body io.Reader, size int64) error
+	// Get abre el objeto; quien llama lo cierra. ErrNotFound si no existe.
+	Get(ctx context.Context, key string) (io.ReadCloser, error)
 	// Delete borra las llaves; las que no existen se ignoran.
 	Delete(ctx context.Context, keys ...string) error
 	// DeletePrefix borra todo lo que empieza con prefix (al eliminar una cuenta).
@@ -42,8 +44,9 @@ type Unavailable struct{}
 func (Unavailable) Put(context.Context, string, string, io.Reader, int64) error {
 	return ErrUnavailable
 }
-func (Unavailable) Delete(context.Context, ...string) error    { return ErrUnavailable }
-func (Unavailable) DeletePrefix(context.Context, string) error { return ErrUnavailable }
+func (Unavailable) Get(context.Context, string) (io.ReadCloser, error) { return nil, ErrUnavailable }
+func (Unavailable) Delete(context.Context, ...string) error            { return ErrUnavailable }
+func (Unavailable) DeletePrefix(context.Context, string) error         { return ErrUnavailable }
 func (Unavailable) PresignGet(context.Context, string, time.Duration, GetOptions) (string, error) {
 	return "", ErrUnavailable
 }

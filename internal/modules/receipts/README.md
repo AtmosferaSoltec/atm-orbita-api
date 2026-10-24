@@ -14,6 +14,8 @@ Recibos por honorarios de la web (plan 18): los datos de cada recibo, el tope an
 | `FileStorage` | `module.go` sobre `storage.Storage` (R2, o `Unavailable` sin `R2_*`) |
 | `Profile` | `module.go` sobre `profile.Reader` |
 
+Los archivos se bajan con URL firmada (`…/url`) y se ven dentro de la web con `…/content`, que el API sirve leyendo de R2 (la llave de R2 no puede configurar CORS en el bucket; ver plan 18).
+
 ## Errores
 
 | Código | HTTP | Cuándo |

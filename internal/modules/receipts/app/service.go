@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"time"
 
@@ -63,6 +64,8 @@ type Documents interface {
 // domain.ErrStorageDisabled si no está configurado.
 type FileStorage interface {
 	Put(ctx context.Context, key, contentType string, data []byte) error
+	// Open devuelve domain.ErrNotFound si el objeto ya no está.
+	Open(ctx context.Context, key string) (io.ReadCloser, error)
 	Delete(ctx context.Context, keys ...string) error
 	DeletePrefix(ctx context.Context, prefix string) error
 	DownloadURL(ctx context.Context, key string, ttl time.Duration, fileName, contentType string, download bool) (string, error)
@@ -309,6 +312,21 @@ func (s *Service) DownloadURL(ctx context.Context, userID, receiptID uuid.UUID, 
 		return "", err
 	}
 	return s.deps.Storage.DownloadURL(ctx, doc.StorageKey, DownloadURLTTL, doc.FileName, doc.ContentType, download)
+}
+
+// Content abre el archivo para mostrarlo dentro de la web (el XML formateado, el
+// PDF embebido). Leerlo de la URL firmada desde el navegador pediría CORS en el
+// bucket, que la llave de R2 no puede configurar (ver plan 18, desviaciones).
+func (s *Service) Content(ctx context.Context, userID, receiptID uuid.UUID, kind domain.DocumentKind) (domain.Document, io.ReadCloser, error) {
+	doc, err := s.deps.Documents.Get(ctx, userID, receiptID, kind)
+	if err != nil {
+		return domain.Document{}, nil, err
+	}
+	body, err := s.deps.Storage.Open(ctx, doc.StorageKey)
+	if err != nil {
+		return domain.Document{}, nil, err
+	}
+	return doc, body, nil
 }
 
 // DeleteDocument quita un archivo; los datos del recibo no cambian.
