@@ -30,6 +30,8 @@ Un plan = una funcionalidad que se entrega, se prueba y se revisa sola. Se ejecu
 | 14 | [Tipo de cambio automático](14-fx-automatic.md) | `profile` | Ajustes → Automático | 02 | Fase tardía, sin proveedor |
 | 15 | [Exportar reporte a PDF](15-reports-pdf.md) | `reports` | Reportes → PDF | 07 | Fase tardía |
 | 16 | [Registro rápido y funciones opcionales](16-quick-entry-preferences.md) | `profile` | Ajustes (nueva sección), Nuevo movimiento, barra inferior, Inicio | 02, 04, 09, 13 | Pendiente |
+| 17 | [Sesión para la web y nombre de la cuenta](17-identity-web-sessions-and-name.md) | `identity` | Web: Iniciar sesión, Registro (Android sin cambios) | 01 | Hecho |
+| 18 | [Recibos por honorarios](18-receipts.md) | `receipts`, `integrations/storage` | Web: Recibos (sin pantallas en Android) | 02, 17 | Hecho |
 
 ```
 00 ─▶ 01 ─▶ 02 ─▶ 03 ─▶ 04 ─▶ 05 ─┬─▶ 06

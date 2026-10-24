@@ -1030,6 +1030,173 @@ paths:
         "409": { $ref: "#/components/responses/CreditConflict" }
         "422": { $ref: "#/components/responses/Archived" }
 
+  /receipts:
+    get:
+      summary: Recibos por honorarios de un año (plan 18, solo web)
+      operationId: listReceipts
+      parameters:
+        - { name: year, in: query, required: true, schema: { type: integer, example: 2026 } }
+      responses:
+        "200":
+          description: Del más reciente al más antiguo, con sus archivos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Receipt" } }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+    post:
+      summary: Registrar un recibo (acepta el id del cliente; reintentar no duplica)
+      operationId: createReceipt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReceiptInput" }
+      responses:
+        "201": { description: Creado, content: { application/json: { schema: { $ref: "#/components/schemas/ReceiptResponse" } } } }
+        "200": { description: Ya existía con ese id, content: { application/json: { schema: { $ref: "#/components/schemas/ReceiptResponse" } } } }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "409": { description: "RECEIPT_ALREADY_EXISTS (serie y número) o ID_CONFLICT", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+  /receipts/years:
+    get:
+      summary: Años con recibos más el actual
+      operationId: receiptYears
+      responses:
+        "200":
+          description: Años, del más reciente al más antiguo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      years: { type: array, items: { type: integer } }
+                      current_year: { type: integer }
+  /receipts/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Un recibo
+      operationId: getReceipt
+      responses:
+        "200": { description: El recibo, content: { application/json: { schema: { $ref: "#/components/schemas/ReceiptResponse" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Cambiar los datos de un recibo (mismo cuerpo que crear)
+      operationId: updateReceipt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReceiptInput" }
+      responses:
+        "200": { description: Actualizado, content: { application/json: { schema: { $ref: "#/components/schemas/ReceiptResponse" } } } }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: RECEIPT_ALREADY_EXISTS, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+    delete:
+      summary: Borrar el recibo y sus archivos
+      operationId: deleteReceipt
+      responses:
+        "204": { description: Borrado }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /receipts/{id}/collected:
+    put:
+      summary: Marcar o desmarcar el día en que el cliente pagó
+      operationId: setReceiptCollected
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                collected_on: { allOf: [{ $ref: "#/components/schemas/LocalDate" }], nullable: true }
+      responses:
+        "200": { description: Actualizado, content: { application/json: { schema: { $ref: "#/components/schemas/ReceiptResponse" } } } }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /receipts/{id}/documents/{kind}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: kind, in: path, required: true, schema: { type: string, enum: [xml, pdf] } }
+    put:
+      summary: Subir el XML (hasta 1 MB, del mismo recibo) o el PDF (hasta 5 MB); reemplaza al anterior
+      operationId: uploadReceiptDocument
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "200": { description: Guardado, content: { application/json: { schema: { type: object, properties: { data: { $ref: "#/components/schemas/ReceiptDocument" } } } } } }
+        "400": { description: "FILE_INVALID o VALIDATION_FAILED", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { description: Cuerpo de más de 6 MB }
+        "422": { description: XML_RECEIPT_MISMATCH, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "503": { description: STORAGE_UNAVAILABLE, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+    delete:
+      summary: Quitar el archivo (los datos del recibo no cambian)
+      operationId: deleteReceiptDocument
+      responses:
+        "204": { description: Quitado }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /receipts/{id}/documents/{kind}/url:
+    get:
+      summary: URL firmada de R2 para bajar el archivo (vence en 5 minutos)
+      operationId: receiptDocumentURL
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: kind, in: path, required: true, schema: { type: string, enum: [xml, pdf] } }
+        - { name: download, in: query, schema: { type: string, enum: ["1"] }, description: Entregarlo como descarga }
+      responses:
+        "200":
+          description: URL firmada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      url: { type: string }
+                      expires_in: { type: integer, example: 300 }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /receipt-limits/{year}:
+    parameters:
+      - { name: year, in: path, required: true, schema: { type: integer, example: 2026 } }
+    get:
+      summary: Tope anual (S/ 50,000.00 si el año no tiene uno propio)
+      operationId: getReceiptLimit
+      responses:
+        "200": { description: El tope, content: { application/json: { schema: { $ref: "#/components/schemas/ReceiptLimitResponse" } } } }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+    put:
+      summary: "Fijar el tope del año (no bloquea: pasarlo solo se informa)"
+      operationId: setReceiptLimit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount: { $ref: "#/components/schemas/Money" }
+      responses:
+        "200": { description: Guardado, content: { application/json: { schema: { $ref: "#/components/schemas/ReceiptLimitResponse" } } } }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
 components:
   responses:
     ResetCodeInvalid:
@@ -1093,6 +1260,57 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    ReceiptClient:
+      type: object
+      required: [name, doc_type]
+      properties:
+        name: { type: string, maxLength: 200 }
+        doc_type: { type: string, enum: [RUC, DNI, OTRO] }
+        doc_number: { type: string, description: "RUC 11 dígitos, DNI 8, OTRO hasta 15" }
+    ReceiptInput:
+      type: object
+      required: [series, number, issue_date, client, gross, source]
+      properties:
+        id: { type: string, format: uuid, description: Solo al crear }
+        series: { type: string, maxLength: 4, example: E001 }
+        number: { type: string, description: "Dígitos; los ceros a la izquierda se quitan", example: "109" }
+        issue_date: { $ref: "#/components/schemas/LocalDate" }
+        client: { $ref: "#/components/schemas/ReceiptClient" }
+        description: { type: string, maxLength: 500 }
+        gross: { $ref: "#/components/schemas/Money" }
+        withholding: { allOf: [{ $ref: "#/components/schemas/Money" }], description: "Menor que el bruto; vacío = 0.00" }
+        collected_on: { allOf: [{ $ref: "#/components/schemas/LocalDate" }], nullable: true }
+        source: { type: string, enum: [xml, manual] }
+    ReceiptDocument:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [xml, pdf] }
+        file_name: { type: string }
+        size_bytes: { type: integer }
+        uploaded_at: { type: string, format: date-time }
+    Receipt:
+      allOf:
+        - $ref: "#/components/schemas/ReceiptInput"
+        - type: object
+          properties:
+            net: { $ref: "#/components/schemas/Money" }
+            documents: { type: array, items: { $ref: "#/components/schemas/ReceiptDocument" } }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+    ReceiptResponse:
+      type: object
+      properties:
+        data: { $ref: "#/components/schemas/Receipt" }
+    ReceiptLimitResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            year: { type: integer }
+            amount: { $ref: "#/components/schemas/Money" }
+            is_default: { type: boolean }
     User:
       type: object
       required: [id, email, name, created_at]
