@@ -1,8 +1,11 @@
 package ledger_test
 
 import (
+	"bytes"
 	"context"
+	"mime/multipart"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -72,8 +75,29 @@ func (h *harness) seedEverything(t *testing.T, token, userID string) {
 		"account_id": ids["Efectivo"], "category_id": ids["Alimentación"], "amount": "18.50", "occurred_on": "2026-10-02",
 	})
 	require.Equal(t, http.StatusCreated, res.status, res.body)
+	// Recibos por honorarios (plan 18): un recibo, su tope y un archivo.
+	res = h.call(t, http.MethodPost, "/receipts", token, map[string]any{
+		"series": "E001", "number": "109", "issue_date": "2026-09-07", "gross": "2000.00", "source": "manual",
+		"client": map[string]string{"name": "Cliente S.A.C.", "doc_type": "RUC", "doc_number": "20492684679"},
+	})
+	require.Equal(t, http.StatusCreated, res.status, res.body)
+	receiptID := res.data()["id"].(string)
+	res = h.call(t, http.MethodPut, "/receipt-limits/2026", token, map[string]string{"amount": "48000.00"})
+	require.Equal(t, http.StatusOK, res.status, res.body)
+	var form bytes.Buffer
+	writer := multipart.NewWriter(&form)
+	part, err := writer.CreateFormFile("file", "recibo.pdf")
+	require.NoError(t, err)
+	_, _ = part.Write([]byte("%PDF-1.4"))
+	require.NoError(t, writer.Close())
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/receipts/"+receiptID+"/documents/pdf", &form)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	h.router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	// Un código de recuperación: este harness no envía correos.
-	_, err := h.pool.Exec(context.Background(), `
+	_, err = h.pool.Exec(context.Background(), `
 		INSERT INTO password_reset_codes (id, user_id, code_hash, expires_at)
 		VALUES (gen_random_uuid(), $1, '\x00', now() + interval '15 minutes')`, userID)
 	require.NoError(t, err)

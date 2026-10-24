@@ -18,11 +18,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/integrations/storage"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/credit"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/home"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/ledger"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/profile"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/receipts"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/reports"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/auth"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/clock"
@@ -52,6 +54,7 @@ func newHarnessAt(t *testing.T, c clock.Clock) *harness {
 	gin.SetMode(gin.TestMode)
 	router, api, err := httpserver.NewRouter(httpserver.Options{
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), RateLimitPerMinute: 10_000,
+		LargeBodyRoutes: map[string]int64{receipts.UploadPath: receipts.MaxUploadBytes},
 	})
 	require.NoError(t, err)
 	runner := tx.NewRunner(pool)
@@ -67,6 +70,8 @@ func newHarnessAt(t *testing.T, c clock.Clock) *harness {
 	creditModule := credit.New(runner, c, ledgerModule.CategoryReader(), profileModule.Reader(), ledgerModule.PaymentLedger())
 	ledgerModule.OnPaymentDeleted(creditModule)
 	homeModule := home.New(profileModule.Reader(), ledgerModule.HomeReader(), reportsModule.Reader(), creditModule.CreditSummary())
+	receiptsModule := receipts.New(runner, c, profileModule.Reader(), storage.NewMemory())
+	identityModule.OnUserDeleted(receiptsModule.OnUserDeleted)
 	identityModule.OnUserRegistered(func(ctx context.Context, u identity.NewUser) error {
 		if err := profileModule.OnUserRegistered(ctx, u.ID, u.MainCurrency, u.Timezone); err != nil {
 			return err
@@ -80,6 +85,7 @@ func newHarnessAt(t *testing.T, c clock.Clock) *harness {
 	reportsModule.Routes(protected)
 	creditModule.Routes(protected)
 	homeModule.Routes(protected)
+	receiptsModule.Routes(protected)
 	return &harness{router: router, pool: pool}
 }
 

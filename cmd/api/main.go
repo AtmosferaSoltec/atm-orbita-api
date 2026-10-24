@@ -22,11 +22,13 @@ import (
 
 	"github.com/AtmosferaSoltec/atm-orbita-api/db"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/integrations/mail"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/integrations/storage"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/credit"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/home"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/ledger"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/profile"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/receipts"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/reports"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/auth"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/clock"
@@ -83,6 +85,7 @@ func run() int {
 		Logger:             log,
 		CORSOrigins:        cfg.CORSOrigins,
 		RateLimitPerMinute: cfg.RateLimitPerMinute,
+		LargeBodyRoutes:    map[string]int64{receipts.UploadPath: receipts.MaxUploadBytes},
 	})
 	if err != nil {
 		log.Error("router", "error", err)
@@ -125,6 +128,17 @@ func run() int {
 	ledgerModule.OnPaymentDeleted(creditModule)
 	homeModule := home.New(profileModule.Reader(), ledgerModule.HomeReader(), reportsModule.Reader(), creditModule.CreditSummary())
 
+	// Archivos de los recibos (plan 18): R2 si está configurado.
+	var files storage.Storage = storage.Unavailable{}
+	r2 := storage.R2Config(cfg.Storage)
+	if r2.Configured() {
+		files = storage.NewR2(r2)
+	} else {
+		log.Warn("storage not configured: receipt files are disabled")
+	}
+	receiptsModule := receipts.New(runner, clock.System{}, profileModule.Reader(), files)
+	identityModule.OnUserDeleted(receiptsModule.OnUserDeleted)
+
 	// El alta corre en una sola transacción: cuenta, sesión y, por cada módulo, lo
 	// que el usuario necesita desde el primer día.
 	identityModule.OnUserRegistered(func(ctx context.Context, user identity.NewUser) error {
@@ -143,6 +157,7 @@ func run() int {
 	reportsModule.Routes(protected)
 	creditModule.Routes(protected)
 	homeModule.Routes(protected)
+	receiptsModule.Routes(protected)
 
 	if err := httpserver.Serve(ctx, router, cfg.Port, log); err != nil {
 		log.Error("server", "error", err)

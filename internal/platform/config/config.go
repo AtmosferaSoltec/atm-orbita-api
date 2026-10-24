@@ -38,6 +38,16 @@ type Config struct {
 	RateLimitPerMinute      int
 	LoginRateLimitPerMinute int
 	Mail                    MailConfig
+	Storage                 StorageConfig
+}
+
+// StorageConfig son los datos de Cloudflare R2. Si falta alguno, los archivos no
+// se pueden guardar (los recibos sí) y el API responde STORAGE_UNAVAILABLE.
+type StorageConfig struct {
+	Endpoint        string
+	AccessKeyID     string
+	SecretAccessKey string
+	Bucket          string
 }
 
 // MailConfig son los datos de Resend. Vacíos en desarrollo: el correo va al log.
@@ -71,6 +81,12 @@ func LoadFrom(lookup func(string) string) (Config, error) {
 		Mail: MailConfig{
 			ResendAPIKey: r.optional("RESEND_API_KEY"),
 			From:         r.optional("MAIL_FROM"),
+		},
+		Storage: StorageConfig{
+			Endpoint:        r.optional("R2_ENDPOINT"),
+			AccessKeyID:     r.optional("R2_ACCESS_KEY_ID"),
+			SecretAccessKey: r.optional("R2_SECRET_ACCESS_KEY"),
+			Bucket:          r.optional("R2_BUCKET"),
 		},
 	}
 

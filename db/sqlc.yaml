@@ -28,6 +28,12 @@ overrides:
       # DATE: medianoche UTC en un time.Time (dates.LocalDate.Time / dates.FromTime).
       - db_type: date
         go_type: time.Time
+      - db_type: date
+        nullable: true
+        go_type:
+          import: time
+          type: Time
+          pointer: true
       # Dinero y tipos de cambio: decimal exacto (pgx-shopspring-decimal), nunca float.
       - db_type: pg_catalog.numeric
         go_type: github.com/shopspring/decimal.Decimal
@@ -86,5 +92,16 @@ sql:
       go:
         package: sqlcgen
         out: ../internal/modules/credit/adapters/postgres/sqlcgen
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
+  - engine: postgresql
+    schema:
+      - migrations/00012_receipts_create_receipts.sql
+    queries:
+      - ../internal/modules/receipts/adapters/postgres/queries.sql
+    gen:
+      go:
+        package: sqlcgen
+        out: ../internal/modules/receipts/adapters/postgres/sqlcgen
         sql_package: pgx/v5
         emit_pointers_for_null_types: true
