@@ -1,6 +1,6 @@
 # Plan 17 · Sesión para la web y nombre de la cuenta
 
-**Estado:** en curso (24 oct 2026). Pedido por el usuario: la web (`atm-orbita-web`) usa las **mismas cuentas** que Android; iniciar sesión, registrarse y recuperar la contraseña tienen que funcionar de verdad desde el navegador.
+**Estado:** hecho (24 oct 2026). Pedido por el usuario: la web (`atm-orbita-web`) usa las **mismas cuentas** que Android; iniciar sesión, registrarse y recuperar la contraseña tienen que funcionar de verdad desde el navegador.
 
 ## Objetivo
 
@@ -45,4 +45,4 @@ CORS: `X-Session-Transport` se agrega a `Access-Control-Allow-Headers` y se resp
 
 ## Desviaciones
 
-_(se anotan al terminar)_
+Ninguna. Migración `00011` aplicada en la base del VPS el 24 oct 2026, desde local por el túnel SSH (`scripts/dev.sh migrate up`); el API desplegado siguió `healthy`.

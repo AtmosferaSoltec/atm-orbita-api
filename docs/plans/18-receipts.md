@@ -1,6 +1,6 @@
 # Plan 18 · Recibos por honorarios
 
-**Estado:** en curso (24 oct 2026). Módulo **solo de la web** (`atm-orbita-web`, sección Recibos): no tiene pantallas en Android. Usa la misma cuenta.
+**Estado:** hecho (24 oct 2026). Migración `00012` aplicada en la base del VPS desde local por el túnel SSH; probado de punta a punta desde la web con el XML real de SUNAT y R2. Módulo **solo de la web** (`atm-orbita-web`, sección Recibos): no tiene pantallas en Android. Usa la misma cuenta.
 
 ## Objetivo
 
