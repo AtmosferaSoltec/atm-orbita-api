@@ -116,3 +116,14 @@ sql:
         out: ../internal/modules/services/adapters/postgres/sqlcgen
         sql_package: pgx/v5
         emit_pointers_for_null_types: true
+
+  - engine: postgresql
+    schema:
+      - migrations/00015_loans_create_debtors_and_monthly_plans.sql
+    queries: ../internal/modules/loans/adapters/postgres/queries.sql
+    gen:
+      go:
+        package: sqlcgen
+        out: ../internal/modules/loans/adapters/postgres/sqlcgen
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
