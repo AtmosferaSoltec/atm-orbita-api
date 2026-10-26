@@ -27,6 +27,7 @@ import (
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/home"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/ledger"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/loans"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/profile"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/receipts"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/reports"
@@ -140,6 +141,7 @@ func run() int {
 		log.Warn("storage not configured: receipt files are disabled")
 	}
 	receiptsModule := receipts.New(runner, clock.System{}, profileModule.Reader(), files)
+	loansModule := loans.New(runner, clock.System{}, profileModule.Reader())
 	servicesModule := services.New(runner, clock.System{}, profileModule.Reader())
 	identityModule.OnUserDeleted(receiptsModule.OnUserDeleted)
 
@@ -163,6 +165,7 @@ func run() int {
 	homeModule.Routes(protected)
 	receiptsModule.Routes(protected)
 	servicesModule.Routes(protected)
+	loansModule.Routes(api, protected)
 
 	if err := httpserver.Serve(ctx, router, cfg.Port, log); err != nil {
 		log.Error("server", "error", err)
