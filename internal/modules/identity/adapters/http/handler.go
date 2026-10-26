@@ -32,7 +32,7 @@ type Service interface {
 	VerifyResetCode(ctx context.Context, email, code string) error
 	ResetPassword(ctx context.Context, email, code, newPassword string) error
 	DeleteAccount(ctx context.Context, userID uuid.UUID, password string) error
-	DeleteAccountWithGoogle(ctx context.Context, userID uuid.UUID, credential, nonce string) error
+	DeleteAccountWithGoogle(ctx context.Context, credential, nonce string) error
 }
 
 // Códigos propios del módulo.
@@ -78,8 +78,9 @@ func (h *Handler) Routes(public, limited, protected gin.IRoutes) {
 	public.POST("/auth/logout", h.logout)
 	protected.GET("/me", h.me)
 	protected.DELETE("/me", h.deleteAccount)
-	// Con Google va bajo /auth/google porque ahí viaja la cookie del reto (plan 21).
-	protected.POST("/auth/google/delete-account", h.googleDeleteAccount)
+	// Con Google no pide sesión (la credencial prueba quién es) y va bajo
+	// /auth/google porque ahí viaja la cookie del reto (plan 21).
+	limited.POST("/auth/google/delete-account", h.googleDeleteAccount)
 }
 
 type registerRequest struct {
@@ -250,6 +251,8 @@ func respondError(c *gin.Context, err error) {
 		apierror.Respond(c, apierror.New(http.StatusServiceUnavailable, "GOOGLE_UNAVAILABLE", "El acceso con Google no está disponible en este momento."))
 	case errors.Is(err, domain.ErrGoogleInvalid):
 		apierror.Respond(c, apierror.New(http.StatusUnauthorized, "GOOGLE_INVALID", "No pudimos verificar tu cuenta de Google. Inténtalo de nuevo."))
+	case errors.Is(err, domain.ErrGoogleNotLinked):
+		apierror.Respond(c, apierror.New(http.StatusNotFound, "GOOGLE_ACCOUNT_NOT_LINKED", "No encontramos una cuenta de Orbita vinculada a ese Google."))
 	case errors.Is(err, domain.ErrGoogleChallengeExpired):
 		apierror.Respond(c, apierror.New(http.StatusUnauthorized, "GOOGLE_CHALLENGE_EXPIRED", "El intento de acceso venció. Vuelve a continuar con Google."))
 	case errors.Is(err, domain.ErrGoogleLinkRequired):

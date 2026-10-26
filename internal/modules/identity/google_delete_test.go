@@ -15,7 +15,7 @@ import (
 )
 
 // Plan 21: quien entró con Google no tiene contraseña; elimina su cuenta
-// confirmando de nuevo con Google.
+// confirmando con Google, sin sesión (Google Play lo pide también desde la web).
 
 func (h *harness) rowsOfUser(t *testing.T, email string) (users, identities int) {
 	t.Helper()
@@ -25,13 +25,13 @@ func (h *harness) rowsOfUser(t *testing.T, email string) (users, identities int)
 	return users, identities
 }
 
-func (h *harness) webDeleteWithGoogle(t *testing.T, access string, cookie *http.Cookie, credential string) *httptest.ResponseRecorder {
+// webDeleteWithGoogle is the browser's request: the challenge travels in its cookie.
+func (h *harness) webDeleteWithGoogle(t *testing.T, cookie *http.Cookie, credential string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/google/delete-account",
 		strings.NewReader(`{"credential":"`+credential+`"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Session-Transport", "cookie")
-	req.Header.Set("Authorization", "Bearer "+access)
 	if cookie != nil {
 		req.AddCookie(cookie)
 	}
@@ -81,10 +81,11 @@ func TestAGoogleAccountWithoutPasswordCanDeleteItselfFromTheBrowser(t *testing.T
 	users, _ := h.rowsOfUser(t, email)
 	require.Equal(t, 1, users)
 
+	// No session is sent: the visitor may have uninstalled the app and never signed in on the web.
 	cookie, credential := h.challenge(t)
-	res := h.webDeleteWithGoogle(t, access, cookie, credential)
+	res := h.webDeleteWithGoogle(t, cookie, credential)
 	require.Equal(t, http.StatusNoContent, res.Code, res.Body.String())
-	assert.Equal(t, -1, refreshCookie(t, res).MaxAge, "the session cookie is cleared")
+	assert.Equal(t, -1, refreshCookie(t, res).MaxAge, "any session cookie of the browser is cleared")
 
 	users, identities := h.rowsOfUser(t, email)
 	assert.Zero(t, users)
@@ -94,40 +95,31 @@ func TestAGoogleAccountWithoutPasswordCanDeleteItselfFromTheBrowser(t *testing.T
 
 func TestTheGoogleDeletionChallengeIsSingleUse(t *testing.T) {
 	h, email := googleHarness(t)
-	access := h.googleAccessToken(t)
+	h.googleAccessToken(t)
 	cookie, credential := h.challenge(t)
-	require.Equal(t, http.StatusNoContent, h.webDeleteWithGoogle(t, access, cookie, credential).Code)
+	require.Equal(t, http.StatusNoContent, h.webDeleteWithGoogle(t, cookie, credential).Code)
 	users, _ := h.rowsOfUser(t, email)
 	assert.Zero(t, users)
 
-	// Even if the session were still valid, the same proof cannot be replayed.
-	again := h.webDeleteWithGoogle(t, access, cookie, credential)
-	assert.NotEqual(t, http.StatusNoContent, again.Code)
+	again := h.webDeleteWithGoogle(t, cookie, credential)
+	assert.Equal(t, http.StatusUnauthorized, again.Code)
+	assert.Contains(t, again.Body.String(), "GOOGLE_CHALLENGE_EXPIRED")
 }
 
-func TestAnotherGoogleAccountCannotDeleteMine(t *testing.T) {
-	h, email := googleHarness(t)
-	// A person with a password account tries to delete it with an unrelated Google identity.
-	mine := h.registerFresh(t, "other")
-	cookie, credential := h.challenge(t)
-	res := h.webDeleteWithGoogle(t, mine.access, cookie, credential)
-	assert.Equal(t, http.StatusUnauthorized, res.Code)
-	assert.Contains(t, res.Body.String(), "INVALID_CREDENTIALS")
-	assert.Equal(t, http.StatusOK, h.call(t, http.MethodGet, "/me", mine.access, nil).status, "the account is intact")
-
-	// And the Google owner's account is not touched either.
-	users, _ := h.rowsOfUser(t, email)
-	assert.Zero(t, users, "nobody signed in as the Google owner in this test")
-}
-
-func TestAGoogleDeletionFailureGivesTheChallengeBack(t *testing.T) {
+func TestAGoogleWithoutAnOrbitaAccountDeletesNothingAndKeepsTheChallenge(t *testing.T) {
 	h, _ := googleHarness(t)
-	mine := h.registerFresh(t, "retry")
+	// A password account exists, but Google was never linked to it.
+	mine := h.registerFresh(t, "unlinked")
+
 	cookie, credential := h.challenge(t)
-	require.Equal(t, http.StatusUnauthorized, h.webDeleteWithGoogle(t, mine.access, cookie, credential).Code)
-	// Same nonce again: it is still valid (the failed attempt rolled back).
-	second := h.webDeleteWithGoogle(t, mine.access, cookie, credential)
-	assert.Contains(t, second.Body.String(), "INVALID_CREDENTIALS", "not GOOGLE_CHALLENGE_EXPIRED")
+	res := h.webDeleteWithGoogle(t, cookie, credential)
+	assert.Equal(t, http.StatusNotFound, res.Code)
+	assert.Contains(t, res.Body.String(), "GOOGLE_ACCOUNT_NOT_LINKED")
+	assert.Equal(t, http.StatusOK, h.call(t, http.MethodGet, "/me", mine.access, nil).status, "the password account is intact")
+
+	// The failed attempt rolled back: the same proof can still be used.
+	retry := h.webDeleteWithGoogle(t, cookie, credential)
+	assert.Contains(t, retry.Body.String(), "GOOGLE_ACCOUNT_NOT_LINKED", "not GOOGLE_CHALLENGE_EXPIRED")
 }
 
 func TestAnAppDeletesWithGoogleSendingTheNonceInTheBody(t *testing.T) {
@@ -135,24 +127,24 @@ func TestAnAppDeletesWithGoogleSendingTheNonceInTheBody(t *testing.T) {
 	nonce := h.nativeChallenge(t)
 	signedIn := h.call(t, http.MethodPost, "/auth/google", "", nativeGoogleBody(nonce, ""))
 	require.Equal(t, http.StatusOK, signedIn.status, signedIn.body)
-	access := tokensOf(t, signedIn.data(t)).access
 
 	nonce = h.nativeChallenge(t)
-	res := h.call(t, http.MethodPost, "/auth/google/delete-account", access,
+	res := h.call(t, http.MethodPost, "/auth/google/delete-account", "",
 		map[string]string{"nonce": nonce, "credential": "valid:" + nonce})
 	require.Equal(t, http.StatusNoContent, res.status, res.body)
 	users, _ := h.rowsOfUser(t, email)
 	assert.Zero(t, users)
 }
 
-func TestGoogleDeletionNeedsASessionAndAProof(t *testing.T) {
-	h, _ := googleHarness(t)
-	cookie, credential := h.challenge(t)
-	noSession := h.webDeleteWithGoogle(t, "", cookie, credential)
-	assert.Equal(t, http.StatusUnauthorized, noSession.Code)
+func TestGoogleDeletionNeedsItsChallenge(t *testing.T) {
+	h, email := googleHarness(t)
+	h.googleAccessToken(t)
+	_, credential := h.challenge(t)
 
-	access := h.googleAccessToken(t)
-	noProof := h.webDeleteWithGoogle(t, access, nil, credential)
-	assert.Equal(t, http.StatusUnauthorized, noProof.Code, "a browser request without its challenge cookie")
-	assert.Equal(t, http.StatusOK, h.call(t, http.MethodGet, "/me", access, nil).status)
+	noCookie := h.webDeleteWithGoogle(t, nil, credential)
+	assert.Equal(t, http.StatusUnauthorized, noCookie.Code, "a browser request without its challenge cookie")
+	noCredential := h.webDeleteWithGoogle(t, nil, "")
+	assert.Equal(t, http.StatusUnauthorized, noCredential.Code)
+	users, _ := h.rowsOfUser(t, email)
+	assert.Equal(t, 1, users, "nothing was deleted")
 }

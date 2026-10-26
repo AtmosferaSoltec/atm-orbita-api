@@ -58,11 +58,12 @@ func (s *Service) DeleteAccount(ctx context.Context, userID uuid.UUID, password 
 }
 
 // DeleteAccountWithGoogle es DeleteAccount para quien entra con Google y no tiene
-// contraseña (plan 21). Exige una credencial de Google recién emitida, con un
-// reto de un solo uso, de la misma identidad de Google vinculada a esta cuenta:
-// una sesión robada, o la cuenta de Google de otra persona, no bastan. Si algo
-// falla, el reto se devuelve (todo va en una transacción) y se puede reintentar.
-func (s *Service) DeleteAccountWithGoogle(ctx context.Context, userID uuid.UUID, credential, nonce string) error {
+// contraseña (plan 21). No pide sesión: la credencial de Google, recién emitida y
+// con un reto de un solo uso, ya prueba quién es, igual que al iniciar sesión, y
+// así sirve también a quien ya desinstaló la app (Google Play lo exige). Se borra
+// la cuenta vinculada a esa identidad de Google; una identidad sin cuenta no borra
+// nada. Si algo falla, el reto se devuelve (todo va en una transacción).
+func (s *Service) DeleteAccountWithGoogle(ctx context.Context, credential, nonce string) error {
 	if s.deps.Google == nil {
 		return domain.ErrGoogleUnavailable
 	}
@@ -74,6 +75,7 @@ func (s *Service) DeleteAccountWithGoogle(ctx context.Context, userID uuid.UUID,
 		return err
 	}
 	now := s.deps.Clock.Now()
+	var userID uuid.UUID
 	err = s.deps.Tx.InTx(ctx, func(ctx context.Context) error {
 		consumed, err := s.deps.Challenges.Consume(ctx, hashToken(nonce), now)
 		if err != nil {
@@ -82,10 +84,9 @@ func (s *Service) DeleteAccountWithGoogle(ctx context.Context, userID uuid.UUID,
 		if !consumed {
 			return domain.ErrGoogleChallengeExpired
 		}
-		linkedTo, err := s.deps.Identities.ByGoogleSubject(ctx, account.Subject)
-		if errors.Is(err, domain.ErrNotFound) || (err == nil && linkedTo != userID) {
-			logger.From(ctx).Warn("security: account deletion with another Google identity", "user_id", userID)
-			return domain.ErrInvalidCredentials
+		userID, err = s.deps.Identities.ByGoogleSubject(ctx, account.Subject)
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.ErrGoogleNotLinked
 		}
 		if err != nil {
 			return err

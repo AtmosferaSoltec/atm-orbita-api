@@ -202,11 +202,13 @@ paths:
       description: |
         Borra de verdad la cuenta y todos sus datos, igual que `DELETE /me`, pero la
         confirmación es una credencial de Google recién emitida con un reto de un solo
-        uso (`POST /auth/google/challenge`). Debe ser la misma identidad de Google
-        vinculada a esta cuenta; otra cuenta de Google da `401 INVALID_CREDENTIALS`.
-        Exige sesión (Bearer). El navegador manda el reto en su cookie
-        (`X-Session-Transport: cookie`); una app nativa lo manda en `nonce`.
-        Si falla, el reto se devuelve y se puede reintentar hasta que venza (plan 21).
+        uso (`POST /auth/google/challenge`). **No pide sesión**: la credencial prueba
+        quién es y sirve a quien ya desinstaló la app (lo exige Google Play). Borra la
+        cuenta vinculada a esa identidad de Google; si no hay ninguna, `404
+        GOOGLE_ACCOUNT_NOT_LINKED` y no se borra nada. Límite por IP como el login.
+        El navegador manda el reto en su cookie (`X-Session-Transport: cookie`); una
+        app nativa lo manda en `nonce`. Si falla, el reto se devuelve y se puede
+        reintentar hasta que venza (plan 21).
       operationId: deleteAccountWithGoogle
       requestBody:
         required: true
@@ -220,7 +222,9 @@ paths:
                 nonce: { type: string, description: Solo apps nativas }
       responses:
         "204": { description: Cuenta eliminada }
-        "401": { description: "INVALID_CREDENTIALS, GOOGLE_INVALID o GOOGLE_CHALLENGE_EXPIRED", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "401": { description: "GOOGLE_INVALID o GOOGLE_CHALLENGE_EXPIRED", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "404": { description: GOOGLE_ACCOUNT_NOT_LINKED, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
         "503": { description: GOOGLE_UNAVAILABLE, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
   /auth/google/challenge:
     post:
