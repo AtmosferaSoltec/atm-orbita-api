@@ -32,6 +32,7 @@ type Service interface {
 	VerifyResetCode(ctx context.Context, email, code string) error
 	ResetPassword(ctx context.Context, email, code, newPassword string) error
 	DeleteAccount(ctx context.Context, userID uuid.UUID, password string) error
+	DeleteAccountWithGoogle(ctx context.Context, userID uuid.UUID, credential, nonce string) error
 }
 
 // Códigos propios del módulo.
@@ -77,6 +78,8 @@ func (h *Handler) Routes(public, limited, protected gin.IRoutes) {
 	public.POST("/auth/logout", h.logout)
 	protected.GET("/me", h.me)
 	protected.DELETE("/me", h.deleteAccount)
+	// Con Google va bajo /auth/google porque ahí viaja la cookie del reto (plan 21).
+	protected.POST("/auth/google/delete-account", h.googleDeleteAccount)
 }
 
 type registerRequest struct {
@@ -341,6 +344,9 @@ func (h *Handler) deleteAccount(c *gin.Context) {
 	if err := h.service.DeleteAccount(c.Request.Context(), principal.UserID, req.Password); err != nil {
 		respondError(c, err)
 		return
+	}
+	if usesCookie(c) {
+		h.clearCookie(c)
 	}
 	apierror.NoContent(c)
 }

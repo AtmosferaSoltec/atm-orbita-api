@@ -34,6 +34,7 @@ Un plan = una funcionalidad que se entrega, se prueba y se revisa sola. Se ejecu
 | 18 | [Recibos por honorarios](18-receipts.md) | `receipts`, `integrations/storage` | Web: Recibos (sin pantallas en Android) | 02, 17 | Hecho |
 | 19 | [Google sign-in and long web sessions](19-google-sign-in.md) | `identity` | Web login and registration; Android unchanged | 01, 11, 17 | Implemented; real client configured locally, full account sign-in and deployment pending |
 | 20 | [Real services and shared payments](20-services.md) | `services` | Web services only | 01, 02, 17 | Implemented and tested locally against the server database |
+| 21 | [Eliminar la cuenta confirmando con Google](21-google-account-deletion.md) | `identity` | Web `/delete-account`; Android (ajuste pendiente en la app) | 12, 19 | Hecho |
 
 ```
 00 ─▶ 01 ─▶ 02 ─▶ 03 ─▶ 04 ─▶ 05 ─┬─▶ 06

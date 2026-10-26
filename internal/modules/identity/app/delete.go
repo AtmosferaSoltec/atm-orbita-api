@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -47,18 +48,63 @@ func (s *Service) DeleteAccount(ctx context.Context, userID uuid.UUID, password 
 	}
 	s.attempts.succeeded(user.Email)
 
-	err = s.deps.Tx.InTx(ctx, func(ctx context.Context) error {
-		for _, hook := range s.deletionHooks {
-			if err := hook(ctx, userID); err != nil {
-				return fmt.Errorf("deletion hook: %w", err)
-			}
-		}
-		return s.deps.Users.Delete(ctx, userID)
-	})
+	err = s.deps.Tx.InTx(ctx, func(ctx context.Context) error { return s.removeAccount(ctx, userID) })
 	if err != nil {
 		return err
 	}
 	// Sin el correo: la cuenta ya no existe.
 	logger.From(ctx).Info("security: account deleted", "user_id", userID)
 	return nil
+}
+
+// DeleteAccountWithGoogle es DeleteAccount para quien entra con Google y no tiene
+// contraseña (plan 21). Exige una credencial de Google recién emitida, con un
+// reto de un solo uso, de la misma identidad de Google vinculada a esta cuenta:
+// una sesión robada, o la cuenta de Google de otra persona, no bastan. Si algo
+// falla, el reto se devuelve (todo va en una transacción) y se puede reintentar.
+func (s *Service) DeleteAccountWithGoogle(ctx context.Context, userID uuid.UUID, credential, nonce string) error {
+	if s.deps.Google == nil {
+		return domain.ErrGoogleUnavailable
+	}
+	if nonce == "" || len(nonce) > 128 || credential == "" || len(credential) > 16384 {
+		return domain.ErrGoogleInvalid
+	}
+	account, err := s.deps.Google.Verify(ctx, credential, nonce)
+	if err != nil {
+		return err
+	}
+	now := s.deps.Clock.Now()
+	err = s.deps.Tx.InTx(ctx, func(ctx context.Context) error {
+		consumed, err := s.deps.Challenges.Consume(ctx, hashToken(nonce), now)
+		if err != nil {
+			return err
+		}
+		if !consumed {
+			return domain.ErrGoogleChallengeExpired
+		}
+		linkedTo, err := s.deps.Identities.ByGoogleSubject(ctx, account.Subject)
+		if errors.Is(err, domain.ErrNotFound) || (err == nil && linkedTo != userID) {
+			logger.From(ctx).Warn("security: account deletion with another Google identity", "user_id", userID)
+			return domain.ErrInvalidCredentials
+		}
+		if err != nil {
+			return err
+		}
+		return s.removeAccount(ctx, userID)
+	})
+	if err != nil {
+		return err
+	}
+	logger.From(ctx).Info("security: account deleted with Google", "user_id", userID)
+	return nil
+}
+
+// removeAccount corre los ganchos y borra al usuario; quien llama ya abrió la transacción.
+func (s *Service) removeAccount(ctx context.Context, userID uuid.UUID) error {
+	for _, hook := range s.deletionHooks {
+		if err := hook(ctx, userID); err != nil {
+			return fmt.Errorf("deletion hook: %w", err)
+		}
+	}
+	return s.deps.Users.Delete(ctx, userID)
 }

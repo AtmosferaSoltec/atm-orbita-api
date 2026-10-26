@@ -112,6 +112,17 @@ func (h *harness) seedEverything(t *testing.T, token, userID string) {
  ) INSERT INTO service_member_payments(id,service_id,user_id,member_id,month,paid_on,amount)
  SELECT gen_random_uuid(),service_id,user_id,id,'2026-01-01','2026-01-10',10 FROM new_member`, userID)
 	require.NoError(t, err)
+	// Loans: a debtor, a payment movement and its monthly plan go with the user cascade.
+	_, err = h.pool.Exec(context.Background(), `
+ WITH debtor AS (
+  INSERT INTO loan_debtors(id,user_id,name,currency)
+  VALUES(gen_random_uuid(),$1,'Deletion probe debtor','PEN') RETURNING id,user_id
+ ), movement AS (
+  INSERT INTO loan_movements(id,debtor_id,user_id,kind,amount,occurred_on,applied_month)
+  SELECT gen_random_uuid(),id,user_id,'payment',50,'2026-01-10','2026-01-01' FROM debtor RETURNING id,debtor_id,user_id
+ ) INSERT INTO loan_month_plans(movement_id,debtor_id,user_id,month,amount)
+ SELECT id,debtor_id,user_id,'2026-01-01',50 FROM movement`, userID)
+	require.NoError(t, err)
 	// Linked Google identities must be removed by the same user cascade.
 	_, err = h.pool.Exec(context.Background(), `INSERT INTO external_identities (provider, subject, user_id) VALUES ('google', $1, $2)`, userID, userID)
 	require.NoError(t, err)
