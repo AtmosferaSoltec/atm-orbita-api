@@ -46,7 +46,7 @@ func (r *repository) InsertMovement(context.Context, uuid.UUID, uuid.UUID, domai
 	r.saves++
 	return true, nil
 }
-func (r *repository) SavePlan(context.Context, uuid.UUID, uuid.UUID, domain.Movement) error {
+func (r *repository) SavePlans(context.Context, uuid.UUID, uuid.UUID, []domain.Plan) error {
 	r.saves++
 	return nil
 }
@@ -81,7 +81,7 @@ func TestInvalidBalanceNeverPersistsAndOwnerLockPrecedesMutation(t *testing.T) {
 	require.Equal(t, 1, repo.locks)
 	require.Zero(t, repo.saves)
 	repo.lockErr = domain.ErrNotFound
-	_, err = service(repo).Plan(context.Background(), uuid.New(), repo.debtor.ID, uuid.New(), nil)
+	_, err = service(repo).Plan(context.Background(), uuid.New(), repo.debtor.ID, nil)
 	require.True(t, errors.Is(err, domain.ErrNotFound))
 	require.Zero(t, repo.saves)
 }

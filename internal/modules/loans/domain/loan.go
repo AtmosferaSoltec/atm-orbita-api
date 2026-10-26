@@ -53,7 +53,6 @@ type Movement struct {
 	AppliedMonth string
 	Title        string
 	Note         string
-	Plan         []Plan
 	CreatedAt    time.Time
 }
 type Debtor struct {
@@ -62,6 +61,7 @@ type Debtor struct {
 	Currency   string
 	ShareToken *string
 	Movements  []Movement
+	Plans      []Plan
 	CreatedAt  time.Time
 }
 
@@ -88,7 +88,7 @@ func ValidMonth(month string) bool {
 func validDate(d dates.LocalDate) bool {
 	return !d.IsZero() && d.Time().Year() >= 2000 && d.Time().Year() <= 2100
 }
-func ValidatePlan(principal money.Amount, plan []Plan) error {
+func ValidatePlan(plan []Plan) error {
 	if len(plan) > 1212 {
 		return Invalid("plan", "LOAN_PLAN_INVALID")
 	}
@@ -104,8 +104,8 @@ func ValidatePlan(principal money.Amount, plan []Plan) error {
 		}
 		total = total.Add(p.Amount.Decimal())
 	}
-	if total.GreaterThan(principal.Decimal()) {
-		return Invalid("plan", "LOAN_PLAN_EXCEEDS_TOTAL")
+	if total.GreaterThan(maxAmount) {
+		return Invalid("plan", "LOAN_TOTAL_TOO_LARGE")
 	}
 	return nil
 }
@@ -133,14 +133,10 @@ func (m Movement) Validate(today dates.LocalDate) error {
 		if !ValidMonth(m.AppliedMonth) {
 			return Invalid("applied_month", "LOAN_PAYMENT_MONTH_INVALID")
 		}
-		if len(m.Plan) > 0 {
-			return Invalid("plan", "LOAN_PLAN_INVALID")
-		}
 	} else {
 		if m.AppliedMonth != "" {
 			return Invalid("applied_month", "LOAN_PAYMENT_MONTH_INVALID")
 		}
-		return ValidatePlan(m.Amount, m.Plan)
 	}
 	return nil
 }
@@ -171,17 +167,10 @@ func ValidateLedger(items []Movement) error {
 	return nil
 }
 func SameMovement(a, b Movement) bool {
-	if a.Kind != b.Kind || !a.Amount.Decimal().Equal(b.Amount.Decimal()) || a.Date.String() != b.Date.String() || a.AppliedMonth != b.AppliedMonth || a.Title != b.Title || a.Note != b.Note || len(a.Plan) != len(b.Plan) {
-		return false
-	}
-	plans := map[string]string{}
-	for _, p := range a.Plan {
-		plans[p.Month] = p.Amount.String()
-	}
-	for _, p := range b.Plan {
-		if plans[p.Month] != p.Amount.String() {
-			return false
-		}
-	}
-	return true
+	return a.Kind == b.Kind &&
+		a.Amount.Decimal().Equal(b.Amount.Decimal()) &&
+		a.Date.String() == b.Date.String() &&
+		a.AppliedMonth == b.AppliedMonth &&
+		a.Title == b.Title &&
+		a.Note == b.Note
 }

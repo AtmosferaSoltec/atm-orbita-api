@@ -128,7 +128,6 @@ func TestCRUDIsolationAndSharing(t *testing.T) {
 	other := h.signUp(t)
 	id := createDebtor(t, h, owner)
 	body := movement("loan", "6000.00")
-	body["plan"] = []any{map[string]string{"month": "2026-10", "amount": "800.00"}, map[string]string{"month": "2026-12", "amount": "500.00"}}
 	res := h.call(t, "POST", path(id)+"/movements", owner, body)
 	require.Equal(t, 201, res.status, res.raw)
 	require.Equal(t, 200, h.call(t, "POST", path(id)+"/movements", owner, body).status)
@@ -189,14 +188,13 @@ func TestCorrectionsValidateLedgerAndPlanAtomically(t *testing.T) {
 	require.Equal(t, 409, h.call(t, "DELETE", path(id)+"/movements/"+a["id"].(string), token, nil).status)
 	p["date"] = "2026-09-30"
 	require.Equal(t, 409, h.call(t, "PATCH", path(id)+"/movements/"+p["id"].(string), token, p).status)
-	planPath := path(id) + "/movements/" + a["id"].(string) + "/plan"
-	valid := map[string]any{"plan": []any{map[string]string{"month": "2026-10", "amount": "800"}}}
+	planPath := path(id) + "/plans"
+	valid := map[string]any{"plans": []any{map[string]string{"month": "2026-10", "amount": "800"}}}
 	require.Equal(t, 200, h.call(t, "PUT", planPath, token, valid).status)
-	invalid := map[string]any{"plan": []any{map[string]string{"month": "2026-10", "amount": "9999"}}}
+	invalid := map[string]any{"plans": []any{map[string]string{"month": "2026-13", "amount": "800"}}}
 	require.Equal(t, 400, h.call(t, "PUT", planPath, token, invalid).status)
 	fetched := h.call(t, "GET", path(id), token, nil)
-	require.Equal(t, "800.00", movementData(t, fetched, a["id"].(string))["plan"].([]any)[0].(map[string]any)["amount"])
-	require.Equal(t, 404, h.call(t, "PUT", path(id)+"/movements/"+p["id"].(string)+"/plan", token, valid).status)
+	require.Equal(t, "800.00", fetched.data["plans"].([]any)[0].(map[string]any)["amount"])
 	require.Equal(t, 200, h.call(t, "DELETE", path(id)+"/movements/"+p["id"].(string), token, nil).status)
 	a["amount"] = "1000"
 	a["kind"] = "payment"

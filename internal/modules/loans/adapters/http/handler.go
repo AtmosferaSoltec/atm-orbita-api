@@ -28,7 +28,7 @@ func (h *Handler) Routes(public, protected gin.IRoutes) {
 	protected.POST("/loan-debtors/:id/movements", h.createMovement)
 	protected.PATCH("/loan-debtors/:id/movements/:movement_id", h.updateMovement)
 	protected.DELETE("/loan-debtors/:id/movements/:movement_id", h.removeMovement)
-	protected.PUT("/loan-debtors/:id/movements/:movement_id/plan", h.plan)
+	protected.PUT("/loan-debtors/:id/plans", h.plan)
 	protected.PUT("/loan-debtors/:id/share", h.share)
 	protected.DELETE("/loan-debtors/:id/share", h.revoke)
 	public.GET("/shared/loan-debtors/:token", h.shared)
@@ -44,14 +44,13 @@ type planBody struct {
 	Amount string `json:"amount"`
 }
 type movementBody struct {
-	ID           string     `json:"id"`
-	Kind         string     `json:"kind"`
-	Amount       string     `json:"amount"`
-	Date         string     `json:"date"`
-	AppliedMonth *string    `json:"applied_month"`
-	Title        string     `json:"title"`
-	Note         string     `json:"note"`
-	Plan         []planBody `json:"plan"`
+	ID           string  `json:"id"`
+	Kind         string  `json:"kind"`
+	Amount       string  `json:"amount"`
+	Date         string  `json:"date"`
+	AppliedMonth *string `json:"applied_month"`
+	Title        string  `json:"title"`
+	Note         string  `json:"note"`
 }
 
 func parseID(raw string) (uuid.UUID, error) {
@@ -88,15 +87,11 @@ func (b movementBody) parse() (domain.Movement, error) {
 	if err != nil {
 		return domain.Movement{}, domain.Invalid("date", "LOAN_DATE_INVALID")
 	}
-	plan, err := parsePlan(b.Plan)
-	if err != nil {
-		return domain.Movement{}, err
-	}
 	month := ""
 	if b.AppliedMonth != nil {
 		month = *b.AppliedMonth
 	}
-	return domain.Movement{ID: id, Kind: b.Kind, Amount: amount, Date: date, AppliedMonth: month, Title: b.Title, Note: b.Note, Plan: plan}, nil
+	return domain.Movement{ID: id, Kind: b.Kind, Amount: amount, Date: date, AppliedMonth: month, Title: b.Title, Note: b.Note}, nil
 }
 func userID(c *gin.Context) uuid.UUID { p, _ := auth.FromContext(c.Request.Context()); return p.UserID }
 func pathID(c *gin.Context, key string) (uuid.UUID, bool) {
@@ -154,18 +149,18 @@ func respond(c *gin.Context, err error) {
 func output(d domain.Debtor, private bool) gin.H {
 	movements := make([]gin.H, 0, len(d.Movements))
 	for _, m := range d.Movements {
-		plan := make([]gin.H, 0, len(m.Plan))
-		for _, p := range m.Plan {
-			plan = append(plan, gin.H{"month": p.Month, "amount": p.Amount})
-		}
 		var month *string
 		if m.AppliedMonth != "" {
 			value := m.AppliedMonth
 			month = &value
 		}
-		movements = append(movements, gin.H{"id": m.ID, "kind": m.Kind, "amount": m.Amount, "date": m.Date, "applied_month": month, "title": m.Title, "note": m.Note, "plan": plan})
+		movements = append(movements, gin.H{"id": m.ID, "kind": m.Kind, "amount": m.Amount, "date": m.Date, "applied_month": month, "title": m.Title, "note": m.Note})
 	}
-	out := gin.H{"id": d.ID, "name": d.Name, "currency": d.Currency, "movements": movements, "created_at": d.CreatedAt}
+	plans := make([]gin.H, 0, len(d.Plans))
+	for _, p := range d.Plans {
+		plans = append(plans, gin.H{"month": p.Month, "amount": p.Amount})
+	}
+	out := gin.H{"id": d.ID, "name": d.Name, "currency": d.Currency, "movements": movements, "plans": plans, "created_at": d.CreatedAt}
 	if private {
 		out["share_token"] = d.ShareToken
 	}
@@ -319,22 +314,18 @@ func (h *Handler) plan(c *gin.Context) {
 	if !ok {
 		return
 	}
-	mid, ok := pathID(c, "movement_id")
-	if !ok {
-		return
-	}
 	var b struct {
-		Plan []planBody `json:"plan"`
+		Plans []planBody `json:"plans"`
 	}
 	if !bind(c, &b) {
 		return
 	}
-	plan, err := parsePlan(b.Plan)
+	plans, err := parsePlan(b.Plans)
 	if err != nil {
 		respond(c, err)
 		return
 	}
-	d, err := h.service.Plan(c.Request.Context(), userID(c), id, mid, plan)
+	d, err := h.service.Plan(c.Request.Context(), userID(c), id, plans)
 	if err != nil {
 		respond(c, err)
 		return

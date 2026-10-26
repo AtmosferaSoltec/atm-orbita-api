@@ -65,7 +65,7 @@ func (r Repository) hydrate(ctx context.Context, user uuid.UUID, rows []sqlcgen.
 	for _, d := range rows {
 		index[d.ID] = len(result)
 		ids = append(ids, d.ID)
-		result = append(result, domain.Debtor{ID: d.ID, Name: d.Name, Currency: d.Currency, ShareToken: d.ShareToken, CreatedAt: d.CreatedAt, Movements: []domain.Movement{}})
+		result = append(result, domain.Debtor{ID: d.ID, Name: d.Name, Currency: d.Currency, ShareToken: d.ShareToken, CreatedAt: d.CreatedAt, Movements: []domain.Movement{}, Plans: []domain.Plan{}})
 	}
 	if len(rows) == 0 {
 		return result, nil
@@ -78,21 +78,17 @@ func (r Repository) hydrate(ctx context.Context, user uuid.UUID, rows []sqlcgen.
 	if err != nil {
 		return nil, err
 	}
-	byMovement := map[uuid.UUID][]domain.Plan{}
 	for _, p := range plans {
-		byMovement[p.MovementID] = append(byMovement[p.MovementID], domain.Plan{Month: p.Month.Format("2006-01"), Amount: money.NewAmount(p.Amount)})
+		i := index[p.DebtorID]
+		result[i].Plans = append(result[i].Plans, domain.Plan{Month: p.Month.Format("2006-01"), Amount: money.NewAmount(p.Amount)})
 	}
 	for _, m := range movements {
 		month := ""
 		if m.AppliedMonth != nil {
 			month = m.AppliedMonth.Format("2006-01")
 		}
-		plan := byMovement[m.ID]
-		if plan == nil {
-			plan = []domain.Plan{}
-		}
 		i := index[m.DebtorID]
-		result[i].Movements = append(result[i].Movements, domain.Movement{ID: m.ID, Kind: m.Kind, Amount: money.NewAmount(m.Amount), Date: dates.FromTime(m.OccurredOn), AppliedMonth: month, Title: m.Title, Note: m.Note, Plan: plan, CreatedAt: m.CreatedAt})
+		result[i].Movements = append(result[i].Movements, domain.Movement{ID: m.ID, Kind: m.Kind, Amount: money.NewAmount(m.Amount), Date: dates.FromTime(m.OccurredOn), AppliedMonth: month, Title: m.Title, Note: m.Note, CreatedAt: m.CreatedAt})
 	}
 	return result, nil
 }
@@ -123,14 +119,14 @@ func (r Repository) UpdateMovement(ctx context.Context, user, id uuid.UUID, m do
 func (r Repository) DeleteMovement(ctx context.Context, user, id, movement uuid.UUID) error {
 	return r.q(ctx).DeleteLoanMovement(ctx, sqlcgen.DeleteLoanMovementParams{ID: movement, DebtorID: id, UserID: user})
 }
-func (r Repository) SavePlan(ctx context.Context, user, id uuid.UUID, m domain.Movement) error {
+func (r Repository) SavePlans(ctx context.Context, user, id uuid.UUID, plans []domain.Plan) error {
 	q := r.q(ctx)
-	if err := q.DeleteLoanPlan(ctx, sqlcgen.DeleteLoanPlanParams{UserID: user, DebtorID: id, MovementID: m.ID}); err != nil {
+	if err := q.DeleteDebtorPlans(ctx, sqlcgen.DeleteDebtorPlansParams{UserID: user, DebtorID: id}); err != nil {
 		return err
 	}
-	for _, p := range m.Plan {
+	for _, p := range plans {
 		month, _ := time.Parse("2006-01", p.Month)
-		if err := q.InsertLoanPlan(ctx, sqlcgen.InsertLoanPlanParams{MovementID: m.ID, DebtorID: id, UserID: user, Month: month, Amount: p.Amount.Decimal()}); err != nil {
+		if err := q.InsertLoanPlan(ctx, sqlcgen.InsertLoanPlanParams{DebtorID: id, UserID: user, Month: month, Amount: p.Amount.Decimal()}); err != nil {
 			return err
 		}
 	}

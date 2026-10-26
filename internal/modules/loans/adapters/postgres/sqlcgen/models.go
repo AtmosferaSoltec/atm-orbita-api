@@ -22,11 +22,12 @@ type LoanDebtor struct {
 }
 
 type LoanMonthPlan struct {
-	MovementID uuid.UUID
-	DebtorID   uuid.UUID
-	UserID     uuid.UUID
-	Month      time.Time
-	Amount     decimal.Decimal
+	DebtorID  uuid.UUID
+	UserID    uuid.UUID
+	Month     time.Time
+	Amount    decimal.Decimal
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type LoanMovement struct {

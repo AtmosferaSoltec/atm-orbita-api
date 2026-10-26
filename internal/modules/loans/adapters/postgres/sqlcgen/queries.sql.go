@@ -13,6 +13,20 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+const deleteDebtorPlans = `-- name: DeleteDebtorPlans :exec
+DELETE FROM loan_month_plans WHERE user_id=$1 AND debtor_id=$2
+`
+
+type DeleteDebtorPlansParams struct {
+	UserID   uuid.UUID
+	DebtorID uuid.UUID
+}
+
+func (q *Queries) DeleteDebtorPlans(ctx context.Context, arg DeleteDebtorPlansParams) error {
+	_, err := q.db.Exec(ctx, deleteDebtorPlans, arg.UserID, arg.DebtorID)
+	return err
+}
+
 const deleteLoanDebtor = `-- name: DeleteLoanDebtor :exec
 DELETE FROM loan_debtors WHERE user_id=$1 AND id=$2
 `
@@ -39,21 +53,6 @@ type DeleteLoanMovementParams struct {
 
 func (q *Queries) DeleteLoanMovement(ctx context.Context, arg DeleteLoanMovementParams) error {
 	_, err := q.db.Exec(ctx, deleteLoanMovement, arg.UserID, arg.DebtorID, arg.ID)
-	return err
-}
-
-const deleteLoanPlan = `-- name: DeleteLoanPlan :exec
-DELETE FROM loan_month_plans WHERE user_id=$1 AND debtor_id=$2 AND movement_id=$3
-`
-
-type DeleteLoanPlanParams struct {
-	UserID     uuid.UUID
-	DebtorID   uuid.UUID
-	MovementID uuid.UUID
-}
-
-func (q *Queries) DeleteLoanPlan(ctx context.Context, arg DeleteLoanPlanParams) error {
-	_, err := q.db.Exec(ctx, deleteLoanPlan, arg.UserID, arg.DebtorID, arg.MovementID)
 	return err
 }
 
@@ -144,20 +143,18 @@ func (q *Queries) InsertLoanMovement(ctx context.Context, arg InsertLoanMovement
 }
 
 const insertLoanPlan = `-- name: InsertLoanPlan :exec
-INSERT INTO loan_month_plans(movement_id,debtor_id,user_id,month,amount) VALUES($1,$2,$3,$4,$5)
+INSERT INTO loan_month_plans(debtor_id,user_id,month,amount) VALUES($1,$2,$3,$4)
 `
 
 type InsertLoanPlanParams struct {
-	MovementID uuid.UUID
-	DebtorID   uuid.UUID
-	UserID     uuid.UUID
-	Month      time.Time
-	Amount     decimal.Decimal
+	DebtorID uuid.UUID
+	UserID   uuid.UUID
+	Month    time.Time
+	Amount   decimal.Decimal
 }
 
 func (q *Queries) InsertLoanPlan(ctx context.Context, arg InsertLoanPlanParams) error {
 	_, err := q.db.Exec(ctx, insertLoanPlan,
-		arg.MovementID,
 		arg.DebtorID,
 		arg.UserID,
 		arg.Month,
@@ -240,7 +237,7 @@ func (q *Queries) ListLoanMovements(ctx context.Context, arg ListLoanMovementsPa
 }
 
 const listLoanPlans = `-- name: ListLoanPlans :many
-SELECT movement_id, debtor_id, user_id, month, amount FROM loan_month_plans WHERE user_id=$1 AND debtor_id=ANY($2::uuid[]) ORDER BY month,movement_id
+SELECT debtor_id, user_id, month, amount, created_at, updated_at FROM loan_month_plans WHERE user_id=$1 AND debtor_id=ANY($2::uuid[]) ORDER BY month
 `
 
 type ListLoanPlansParams struct {
@@ -258,11 +255,12 @@ func (q *Queries) ListLoanPlans(ctx context.Context, arg ListLoanPlansParams) ([
 	for rows.Next() {
 		var i LoanMonthPlan
 		if err := rows.Scan(
-			&i.MovementID,
 			&i.DebtorID,
 			&i.UserID,
 			&i.Month,
 			&i.Amount,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

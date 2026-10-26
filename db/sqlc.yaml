@@ -120,6 +120,7 @@ sql:
   - engine: postgresql
     schema:
       - migrations/00015_loans_create_debtors_and_monthly_plans.sql
+      - migrations/00016_loans_redesign_debtor_monthly_plans.sql
     queries: ../internal/modules/loans/adapters/postgres/queries.sql
     gen:
       go:

@@ -24,7 +24,7 @@ type Repository interface {
 	InsertMovement(context.Context, uuid.UUID, uuid.UUID, domain.Movement) (bool, error)
 	UpdateMovement(context.Context, uuid.UUID, uuid.UUID, domain.Movement) error
 	DeleteMovement(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) error
-	SavePlan(context.Context, uuid.UUID, uuid.UUID, domain.Movement) error
+	SavePlans(context.Context, uuid.UUID, uuid.UUID, []domain.Plan) error
 	SetShare(context.Context, uuid.UUID, uuid.UUID, *string) error
 }
 type Transactor interface {
@@ -190,10 +190,9 @@ func (s *Service) SaveMovement(ctx context.Context, user, id uuid.UUID, in domai
 				return domain.ErrIDConflict
 			}
 			created = true
-		} else if err := s.deps.Repo.UpdateMovement(ctx, user, id, in); err != nil {
-			return err
+			return nil
 		}
-		return s.deps.Repo.SavePlan(ctx, user, id, in)
+		return s.deps.Repo.UpdateMovement(ctx, user, id, in)
 	})
 	return result, created, err
 }
@@ -217,18 +216,13 @@ func (s *Service) RemoveMovement(ctx context.Context, user, id, movement uuid.UU
 		return s.deps.Repo.DeleteMovement(ctx, user, id, movement)
 	})
 }
-func (s *Service) Plan(ctx context.Context, user, id, movement uuid.UUID, plan []domain.Plan) (domain.Debtor, error) {
+func (s *Service) Plan(ctx context.Context, user, id uuid.UUID, plans []domain.Plan) (domain.Debtor, error) {
+	if err := domain.ValidatePlan(plans); err != nil {
+		return domain.Debtor{}, err
+	}
 	return s.mutate(ctx, user, id, func(ctx context.Context, d *domain.Debtor) error {
-		for _, m := range d.Movements {
-			if m.ID == movement && m.Kind == "loan" {
-				if err := domain.ValidatePlan(m.Amount, plan); err != nil {
-					return err
-				}
-				m.Plan = plan
-				return s.deps.Repo.SavePlan(ctx, user, id, m)
-			}
-		}
-		return domain.ErrNotFound
+		d.Plans = plans
+		return s.deps.Repo.SavePlans(ctx, user, id, plans)
 	})
 }
 func (s *Service) Share(ctx context.Context, user, id uuid.UUID, enabled bool) (domain.Debtor, error) {

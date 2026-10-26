@@ -28,7 +28,6 @@ func movement(kind, value, on string) domain.Movement {
 }
 func TestManualPlanAndFlexiblePayments(t *testing.T) {
 	loan := movement("loan", "6000.00", "2026-10-01")
-	loan.Plan = []domain.Plan{{Month: "2026-10", Amount: amount("800")}, {Month: "2026-12", Amount: amount("500")}}
 	require.NoError(t, loan.Validate(date("2026-10-24")))
 	for _, value := range []string{"500", "1000"} {
 		p := movement("payment", value, "2026-10-15")
@@ -36,7 +35,9 @@ func TestManualPlanAndFlexiblePayments(t *testing.T) {
 		require.NoError(t, p.Validate(date("2026-10-24")))
 		require.NoError(t, domain.ValidateLedger([]domain.Movement{loan, p}))
 	}
-	require.NoError(t, domain.ValidatePlan(amount("6000"), nil))
+	plan := []domain.Plan{{Month: "2026-10", Amount: amount("800")}, {Month: "2026-12", Amount: amount("500")}}
+	require.NoError(t, domain.ValidatePlan(plan))
+	require.NoError(t, domain.ValidatePlan(nil))
 }
 func TestLedgerRejectsOverpaymentAndBackdatedCorrections(t *testing.T) {
 	loan := movement("loan", "3000", "2026-10-01")
@@ -52,9 +53,9 @@ func TestLedgerRejectsOverpaymentAndBackdatedCorrections(t *testing.T) {
 }
 func TestPlanValidation(t *testing.T) {
 	for _, plan := range [][]domain.Plan{
-		{{Month: "2026-13", Amount: amount("1")}}, {{Month: "1999-12", Amount: amount("1")}}, {{Month: "2026-10", Amount: amount("0")}}, {{Month: "2026-10", Amount: amount("101")}}, {{Month: "2026-10", Amount: amount("1")}, {Month: "2026-10", Amount: amount("1")}},
+		{{Month: "2026-13", Amount: amount("1")}}, {{Month: "1999-12", Amount: amount("1")}}, {{Month: "2026-10", Amount: amount("0")}}, {{Month: "2026-10", Amount: amount("1")}, {Month: "2026-10", Amount: amount("1")}},
 	} {
-		require.Error(t, domain.ValidatePlan(amount("100"), plan))
+		require.Error(t, domain.ValidatePlan(plan))
 	}
 }
 func TestMovementValidation(t *testing.T) {
@@ -66,6 +67,5 @@ func TestMovementValidation(t *testing.T) {
 	p.AppliedMonth = ""
 	require.Error(t, p.Validate(today))
 	p.AppliedMonth = "2026-10"
-	p.Plan = []domain.Plan{{Month: "2026-10", Amount: amount("1")}}
-	require.Error(t, p.Validate(today))
+	require.NoError(t, p.Validate(today))
 }
