@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/apierror"
-	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/auth"
 )
 
 // UserDeletedRoute monta POST /internal/auth/user-deleted: atm-auth-api lo llama
@@ -20,12 +19,12 @@ func UserDeletedRoute(r gin.IRoutes, verifier *Verifier, remove func(c *gin.Cont
 		header := c.GetHeader("Authorization")
 		scheme, token, found := strings.Cut(header, " ")
 		if !found || !strings.EqualFold(scheme, "Bearer") {
-			apierror.Respond(c, auth.ErrUnauthorized)
+			apierror.Respond(c, apierror.ErrUnauthorized)
 			return
 		}
 		claims, err := verifier.Verify(strings.TrimSpace(token))
 		if err != nil || claims.Role != "service" || claims.Subject != "system:auth" {
-			apierror.Respond(c, auth.ErrUnauthorized)
+			apierror.Respond(c, apierror.ErrUnauthorized)
 			return
 		}
 		var body struct {

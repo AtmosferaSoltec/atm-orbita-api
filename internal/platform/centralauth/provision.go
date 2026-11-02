@@ -2,10 +2,15 @@ package centralauth
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/google/uuid"
 
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/apierror"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/tx"
 )
 
@@ -35,6 +40,12 @@ func (u Users) Provision(ctx context.Context, userID uuid.UUID, email, name stri
 		tag, err := u.Tx.DB(ctx).Exec(ctx,
 			`INSERT INTO users (id, email, name) VALUES ($1, $2, NULLIF($3, '')) ON CONFLICT (id) DO NOTHING`,
 			userID, email, name)
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			// Esa persona ya tiene una cuenta propia de Orbita con otro id: hasta migrarla
+			// no se pueden juntar, y mezclar datos a ciegas sería peor que negar el acceso.
+			return apierror.New(http.StatusConflict, "ACCOUNT_NOT_MIGRATED", "Esta cuenta aún no se migra. Inicia sesión con tu cuenta anterior.")
+		}
 		if err != nil {
 			return fmt.Errorf("insert user: %w", err)
 		}
