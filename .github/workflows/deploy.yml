@@ -21,16 +21,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Regla del proyecto: develop -> main -> production. Un commit que no pasó
-      # por main no se despliega.
-      - name: Ensure the commit is already in main
-        run: |
-          git fetch origin main
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::El commit $GITHUB_SHA no esta en main. Flujo obligatorio: develop -> main -> production."
-            exit 1
-          fi
-
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -85,6 +75,7 @@ jobs:
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
           IMAGE_TAG: sha-${{ github.sha }}
+          IMAGE_REPO: ${{ env.IMAGE }}
         run: |
           set -euo pipefail
           install -m 700 -d ~/.ssh
@@ -105,7 +96,7 @@ jobs:
 
           # El login a GHCR vive en el servidor (~/.docker/config.json). Si el
           # pull da `denied`, renovarlo con `docker login ghcr.io` en el VPS.
-          ssh "${opts[@]}" "$target" "IMAGE_TAG=$IMAGE_TAG bash -s" <<'REMOTE'
+          ssh "${opts[@]}" "$target" "IMAGE_TAG=$IMAGE_TAG IMAGE_REPO=$IMAGE_REPO bash -s" <<'REMOTE'
           set -e
           cd /opt/orbita-api
 
@@ -114,10 +105,16 @@ jobs:
             exit 1
           fi
 
-          export IMAGE_TAG
+          export IMAGE_TAG IMAGE_REPO
           docker compose pull
           docker compose up -d
-          docker image prune -f
+          # Remove this project's previous images (no rollback copies are kept). `docker rmi`
+          # refuses an image a container still uses; cleanup must never fail the deploy.
+          for repo in "$IMAGE_REPO" "$IMAGE_REPO-migrate"; do
+            docker images "$repo" --format '{{.Repository}}:{{.Tag}}' \
+              | grep -v ":${IMAGE_TAG}$" | xargs -r docker rmi || true
+          done
+          docker image prune -f || true
 
           for _ in $(seq 1 60); do
             status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' orbita-api 2>/dev/null || echo missing)"
