@@ -20,6 +20,9 @@ import (
 	// La imagen trae tzdata, pero así "hoy" por zona horaria no depende del sistema.
 	_ "time/tzdata"
 
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+
 	"github.com/AtmosferaSoltec/atm-orbita-api/db"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/integrations/mail"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/integrations/storage"
@@ -33,8 +36,10 @@ import (
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/reports"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/services"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/auth"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/centralauth"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/clock"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/config"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/currency"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/database"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/health"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/httpserver"
@@ -156,7 +161,31 @@ func run() int {
 
 	// Registro, inicio de sesión y renovación tienen un límite por IP más estrecho.
 	limited := api.Group("", middleware.NewRateLimiter(cfg.LoginRateLimitPerMinute).Middleware())
-	protected := api.Group("", auth.Require(identityModule.Authenticator()))
+	// Con AUTH_PUBLIC_KEY_BASE64 también valen los tokens de atm-auth-api (RS256); los
+	// propios siguen valiendo hasta que los usuarios se migren.
+	authenticator := identityModule.Authenticator()
+	if cfg.Auth.PublicKeyBase64 != "" {
+		verifier, err := centralauth.NewVerifier(cfg.Auth.PublicKeyBase64, cfg.Auth.Issuer)
+		if err != nil {
+			log.Error("central auth", "error", err)
+			return 1
+		}
+		people := centralauth.Users{
+			Tx: runner, Setup: func(ctx context.Context, userID uuid.UUID, mainCurrency, timezone string) error {
+				if err := profileModule.OnUserRegistered(ctx, userID, mainCurrency, timezone); err != nil {
+					return err
+				}
+				return ledgerModule.OnUserRegistered(ctx, userID, mainCurrency)
+			},
+			OnDelete:     []centralauth.DeletionHook{receiptsModule.OnUserDeleted},
+			MainCurrency: currency.Default, Timezone: "America/Lima",
+		}
+		authenticator = &centralauth.Authenticator{Verifier: verifier, Provisioner: people, Fallback: authenticator}
+		centralauth.UserDeletedRoute(api, verifier, func(c *gin.Context, userID uuid.UUID) error {
+			return people.Delete(c.Request.Context(), userID)
+		})
+	}
+	protected := api.Group("", auth.Require(authenticator))
 	identityModule.Routes(api, limited, protected)
 	profileModule.Routes(api, protected)
 	ledgerModule.Routes(protected)

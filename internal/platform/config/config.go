@@ -41,6 +41,14 @@ type Config struct {
 	LoginRateLimitPerMinute int
 	Mail                    MailConfig
 	Storage                 StorageConfig
+	// Auth es atm-auth-api. Vacío: solo valen los tokens propios (los de identity).
+	Auth AuthConfig
+}
+
+// AuthConfig verifica los tokens RS256 de atm-auth-api.
+type AuthConfig struct {
+	PublicKeyBase64 string
+	Issuer          string
 }
 
 // StorageConfig son los datos de Cloudflare R2. Si falta alguno, los archivos no
@@ -86,6 +94,7 @@ func LoadFrom(lookup func(string) string) (Config, error) {
 			ResendAPIKey: r.optional("RESEND_API_KEY"),
 			From:         r.optional("MAIL_FROM"),
 		},
+		Auth: AuthConfig{PublicKeyBase64: r.optional("AUTH_PUBLIC_KEY_BASE64"), Issuer: r.optional("AUTH_ISSUER")},
 		Storage: StorageConfig{
 			Endpoint:        r.optional("R2_ENDPOINT"),
 			AccessKeyID:     r.optional("R2_ACCESS_KEY_ID"),
@@ -96,6 +105,10 @@ func LoadFrom(lookup func(string) string) (Config, error) {
 
 	if cfg.GoogleWebClientID != "" && (!strings.HasSuffix(cfg.GoogleWebClientID, ".apps.googleusercontent.com") || strings.ContainsAny(cfg.GoogleWebClientID, " \t\n")) {
 		r.fail("GOOGLE_WEB_CLIENT_ID must be an OAuth web client ID ending in .apps.googleusercontent.com")
+	}
+
+	if (cfg.Auth.PublicKeyBase64 == "") != (cfg.Auth.Issuer == "") {
+		r.fail("AUTH_PUBLIC_KEY_BASE64 and AUTH_ISSUER must be set together")
 	}
 
 	if cfg.IsProduction() {
