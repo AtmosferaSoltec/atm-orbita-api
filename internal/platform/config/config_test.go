@@ -1,9 +1,7 @@
 package config
 
 import (
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -11,14 +9,12 @@ import (
 
 func validEnv() map[string]string {
 	return map[string]string{
-		"APP_ENV":                     "development",
-		"PORT":                        "3001",
-		"DATABASE_URL":                "postgresql://orbita_app:secret@localhost:5432/orbita?search_path=orbita",
-		"JWT_ACCESS_SECRET":           strings.Repeat("s", 64),
-		"ACCESS_TOKEN_TTL_SECONDS":    "900",
-		"REFRESH_TOKEN_TTL_DAYS":      "30",
-		"RATE_LIMIT_PER_MINUTE":       "300",
-		"LOGIN_RATE_LIMIT_PER_MINUTE": "5",
+		"APP_ENV":                "development",
+		"PORT":                   "3001",
+		"DATABASE_URL":           "postgresql://orbita_app:secret@localhost:5432/orbita?search_path=orbita",
+		"AUTH_PUBLIC_KEY_BASE64": "cHVibGljLWtleQ==",
+		"AUTH_ISSUER":            "atm-auth-api",
+		"RATE_LIMIT_PER_MINUTE":  "300",
 	}
 }
 
@@ -30,8 +26,7 @@ func TestAValidEnvironmentLoads(t *testing.T) {
 	cfg, err := load(validEnv())
 	require.NoError(t, err)
 	assert.Equal(t, Development, cfg.Env)
-	assert.Equal(t, 15*time.Minute, cfg.AccessTokenTTL)
-	assert.Equal(t, 30*24*time.Hour, cfg.RefreshTokenTTL)
+	assert.Equal(t, "atm-auth-api", cfg.Auth.Issuer)
 	assert.Empty(t, cfg.CORSOrigins)
 }
 
@@ -55,12 +50,14 @@ func TestEveryProblemIsReportedAtOnce(t *testing.T) {
 	}
 }
 
-func TestAShortSecretIsRejected(t *testing.T) {
+func TestTheAuthKeyAndIssuerAreRequired(t *testing.T) {
 	env := validEnv()
-	env["JWT_ACCESS_SECRET"] = "short"
+	delete(env, "AUTH_PUBLIC_KEY_BASE64")
+	delete(env, "AUTH_ISSUER")
 	_, err := load(env)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "JWT_ACCESS_SECRET must have at least 32 characters")
+	assert.Contains(t, err.Error(), "AUTH_PUBLIC_KEY_BASE64 is required")
+	assert.Contains(t, err.Error(), "AUTH_ISSUER is required")
 }
 
 func TestTheDatabasePasswordIsNeverPrinted(t *testing.T) {
@@ -71,18 +68,14 @@ func TestTheDatabasePasswordIsNeverPrinted(t *testing.T) {
 	assert.NotContains(t, err.Error(), "topsecret")
 }
 
-func TestProductionNeedsMailAndCors(t *testing.T) {
+func TestProductionNeedsCors(t *testing.T) {
 	env := validEnv()
 	env["APP_ENV"] = "production"
 	_, err := load(env)
 	require.Error(t, err)
-	for _, name := range []string{"CORS_ORIGIN", "RESEND_API_KEY", "MAIL_FROM"} {
-		assert.Contains(t, err.Error(), name+" is required in production")
-	}
+	assert.Contains(t, err.Error(), "CORS_ORIGIN is required in production")
 
 	env["CORS_ORIGIN"] = "https://orbita.atmosferast.com, https://admin.example.com"
-	env["RESEND_API_KEY"] = "re_123"
-	env["MAIL_FROM"] = "Orbita <no-reply@atmosferast.com>"
 	cfg, err := load(env)
 	require.NoError(t, err)
 	assert.True(t, cfg.IsProduction())
@@ -95,26 +88,4 @@ func TestAnUnknownEnvironmentIsRejected(t *testing.T) {
 	_, err := load(env)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "APP_ENV")
-}
-
-func TestGoogleAndWebSessionConfiguration(t *testing.T) {
-	cfg, err := load(validEnv())
-	require.NoError(t, err)
-	assert.Equal(t, 90*24*time.Hour, cfg.WebRefreshTokenTTL)
-	assert.Empty(t, cfg.GoogleWebClientID)
-	env := validEnv()
-	env["WEB_REFRESH_TOKEN_TTL_DAYS"] = "60"
-	env["GOOGLE_WEB_CLIENT_ID"] = "123-example.apps.googleusercontent.com"
-	cfg, err = load(env)
-	require.NoError(t, err)
-	assert.Equal(t, 60*24*time.Hour, cfg.WebRefreshTokenTTL)
-	for _, invalid := range []string{"0", "-1", "366", "many"} {
-		env["WEB_REFRESH_TOKEN_TTL_DAYS"] = invalid
-		_, err := load(env)
-		require.ErrorContains(t, err, "WEB_REFRESH_TOKEN_TTL_DAYS")
-	}
-	env["WEB_REFRESH_TOKEN_TTL_DAYS"] = "90"
-	env["GOOGLE_WEB_CLIENT_ID"] = "an-api-key"
-	_, err = load(env)
-	require.ErrorContains(t, err, "GOOGLE_WEB_CLIENT_ID")
 }

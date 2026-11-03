@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,9 +18,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/profile"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/auth"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/centralauth/centraltest"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/clock"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/httpserver"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/testsupport"
@@ -33,6 +34,9 @@ type harness struct {
 	router *gin.Engine
 	pool   *pgxpool.Pool
 	reader profile.Reader
+
+	central *centraltest.Harness
+	people  sync.Map // token -> id de la persona
 }
 
 func newHarness(t *testing.T) *harness {
@@ -44,20 +48,13 @@ func newHarness(t *testing.T) *harness {
 	})
 	require.NoError(t, err)
 	runner := tx.NewRunner(pool)
-	identityModule, err := identity.New(identity.Deps{
-		Tx: runner, Clock: clock.System{}, JWTSecret: strings.Repeat("k", 64),
-		AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 30 * 24 * time.Hour,
-		PasswordParams: &identity.FastPasswordParams,
-	})
-	require.NoError(t, err)
 	profileModule := profile.New(runner, clock.System{})
-	identityModule.OnUserRegistered(func(ctx context.Context, u identity.NewUser) error {
-		return profileModule.OnUserRegistered(ctx, u.ID, u.MainCurrency, u.Timezone)
+	central := centraltest.New(t, runner, func(ctx context.Context, userID uuid.UUID, mainCurrency, timezone string) error {
+		return profileModule.OnUserRegistered(ctx, userID, mainCurrency, timezone)
 	})
-	protected := api.Group("", auth.Require(identityModule.Authenticator()))
-	identityModule.Routes(api, api, protected)
+	protected := api.Group("", auth.Require(central.Authenticator()))
 	profileModule.Routes(api, protected)
-	return &harness{router: router, pool: pool, reader: profileModule.Reader()}
+	return &harness{router: router, pool: pool, reader: profileModule.Reader(), central: central}
 }
 
 type response struct {
@@ -108,18 +105,14 @@ func (r response) fieldCodes() []string {
 	return codes
 }
 
-// signUp registra y devuelve el access token y el correo.
+// signUp da de alta y devuelve el access token y el correo.
 func (h *harness) signUp(t *testing.T, label string, fields map[string]string) (string, string) {
 	t.Helper()
 	email := testsupport.UniqueEmail(label)
 	testsupport.DeleteUsersByEmail(t, h.pool, email)
-	payload := map[string]string{"email": email, "password": "vidanueva123"}
-	for k, v := range fields {
-		payload[k] = v
-	}
-	res := h.call(t, http.MethodPost, "/auth/register", "", payload)
-	require.Equal(t, http.StatusCreated, res.status, res.body)
-	return res.data()["tokens"].(map[string]any)["access_token"].(string), email
+	id, token := h.central.SignUp(t, email, fields["main_currency"], fields["timezone"])
+	h.people.Store(token, id)
+	return token, email
 }
 
 func TestSigningUpCreatesTheProfileWithoutARate(t *testing.T) {
@@ -217,11 +210,10 @@ func TestEachUserSeesOnlyTheirOwnRate(t *testing.T) {
 func TestTheReaderGivesTodayInTheUsersTimeZone(t *testing.T) {
 	h := newHarness(t)
 	token, _ := h.signUp(t, "today", map[string]string{"timezone": "Pacific/Kiritimati"})
-	res := h.call(t, http.MethodGet, "/me", token, nil)
-	require.Equal(t, http.StatusOK, res.status)
-	userID := res.data()["id"].(string)
+	userID, ok := h.people.Load(token)
+	require.True(t, ok)
 
-	today, err := h.reader.Today(context.Background(), uuid.MustParse(userID))
+	today, err := h.reader.Today(context.Background(), userID.(uuid.UUID))
 	require.NoError(t, err)
 	// Kiritimati (UTC+14) va un día por delante de casi todo el mundo.
 	want := time.Now().UTC().Add(14 * time.Hour).Format("2006-01-02")

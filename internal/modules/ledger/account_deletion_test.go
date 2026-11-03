@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -53,9 +54,9 @@ func (h *harness) rowsOf(t *testing.T, tables []string, userID string) map[strin
 
 func (h *harness) userID(t *testing.T, token string) string {
 	t.Helper()
-	res := h.call(t, http.MethodGet, "/me", token, nil)
-	require.Equal(t, http.StatusOK, res.status)
-	return res.data()["id"].(string)
+	id, ok := h.people.Load(token)
+	require.True(t, ok, "token sin persona")
+	return id.(string)
 }
 
 // seedEverything deja al usuario con al menos una fila en cada tabla suya.
@@ -96,11 +97,6 @@ func (h *harness) seedEverything(t *testing.T, token, userID string) {
 	rec := httptest.NewRecorder()
 	h.router.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	// Un código de recuperación: este harness no envía correos.
-	_, err = h.pool.Exec(context.Background(), `
-		INSERT INTO password_reset_codes (id, user_id, code_hash, expires_at)
-		VALUES (gen_random_uuid(), $1, '\x00', now() + interval '15 minutes')`, userID)
-	require.NoError(t, err)
 	// Services, members and their payments are removed by the user cascade.
 	_, err = h.pool.Exec(context.Background(), `
  WITH new_service AS (
@@ -123,9 +119,6 @@ func (h *harness) seedEverything(t *testing.T, token, userID string) {
  ) INSERT INTO loan_month_plans(debtor_id,user_id,month,amount)
  SELECT id,user_id,'2026-01-01',50 FROM debtor`, userID)
 	require.NoError(t, err)
-	// Linked Google identities must be removed by the same user cascade.
-	_, err = h.pool.Exec(context.Background(), `INSERT INTO external_identities (provider, subject, user_id) VALUES ('google', $1, $2)`, userID, userID)
-	require.NoError(t, err)
 }
 
 func TestDeletingTheAccountLeavesNoRowOfTheUserInAnyTable(t *testing.T) {
@@ -146,28 +139,17 @@ func TestDeletingTheAccountLeavesNoRowOfTheUserInAnyTable(t *testing.T) {
 		require.Positive(t, n, "seedEverything no deja filas en %s", table)
 	}
 	otherBefore := h.rowsOf(t, tables, other)
-	var sessions []string
-	rows, err := h.pool.Query(context.Background(), `SELECT id::text FROM sessions WHERE user_id = $1`, me)
+	// El borrado de la cuenta lo hace centralauth (ganchos de borrado y cascada).
+	meID, err := uuid.Parse(me)
 	require.NoError(t, err)
-	for rows.Next() {
-		var id string
-		require.NoError(t, rows.Scan(&id))
-		sessions = append(sessions, id)
-	}
-	rows.Close()
-
-	res := h.call(t, http.MethodDelete, "/me", token, map[string]string{"password": "vidanueva123"})
-	require.Equal(t, http.StatusNoContent, res.status, res.body)
+	require.NoError(t, h.central.Users.Delete(context.Background(), meID))
 
 	for table, n := range h.rowsOf(t, tables, me) {
 		assert.Zero(t, n, "quedan filas del usuario en %s", table)
 	}
-	var tokens int
-	require.NoError(t, h.pool.QueryRow(context.Background(),
-		`SELECT count(*) FROM refresh_tokens WHERE session_id::text = ANY($1)`, sessions).Scan(&tokens))
-	assert.Zero(t, tokens, "quedan tokens de renovación")
-
 	assert.Equal(t, otherBefore, h.rowsOf(t, tables, other), "los datos de otro usuario siguen intactos")
 	assert.Equal(t, http.StatusOK, h.call(t, http.MethodGet, "/home", otherToken, nil).status)
-	assert.Equal(t, http.StatusUnauthorized, h.call(t, http.MethodGet, "/home", token, nil).status)
+	var users int
+	require.NoError(t, h.pool.QueryRow(context.Background(), `SELECT count(*) FROM users WHERE id = $1`, me).Scan(&users))
+	assert.Zero(t, users, "queda la fila de users")
 }

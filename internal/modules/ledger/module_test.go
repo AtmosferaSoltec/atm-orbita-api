@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -21,12 +20,12 @@ import (
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/integrations/storage"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/credit"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/home"
-	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/ledger"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/profile"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/receipts"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/reports"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/auth"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/centralauth/centraltest"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/clock"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/httpserver"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/testsupport"
@@ -37,8 +36,10 @@ import (
 // cableados como en cmd/api/main.go.
 
 type harness struct {
-	router *gin.Engine
-	pool   *pgxpool.Pool
+	router  *gin.Engine
+	pool    *pgxpool.Pool
+	central *centraltest.Harness
+	people  sync.Map // token -> id de la persona
 }
 
 func newHarness(t *testing.T) *harness {
@@ -58,12 +59,6 @@ func newHarnessAt(t *testing.T, c clock.Clock) *harness {
 	})
 	require.NoError(t, err)
 	runner := tx.NewRunner(pool)
-	identityModule, err := identity.New(identity.Deps{
-		Tx: runner, Clock: clock.System{}, JWTSecret: strings.Repeat("k", 64),
-		AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 30 * 24 * time.Hour,
-		PasswordParams: &identity.FastPasswordParams,
-	})
-	require.NoError(t, err)
 	profileModule := profile.New(runner, c)
 	ledgerModule := ledger.New(runner, c, profileModule.Reader())
 	reportsModule := reports.New(ledgerModule.ReportQuery(), profileModule.Reader())
@@ -71,22 +66,20 @@ func newHarnessAt(t *testing.T, c clock.Clock) *harness {
 	ledgerModule.OnPaymentDeleted(creditModule)
 	homeModule := home.New(profileModule.Reader(), ledgerModule.HomeReader(), reportsModule.Reader(), creditModule.CreditSummary())
 	receiptsModule := receipts.New(runner, c, profileModule.Reader(), storage.NewMemory())
-	identityModule.OnUserDeleted(receiptsModule.OnUserDeleted)
-	identityModule.OnUserRegistered(func(ctx context.Context, u identity.NewUser) error {
-		if err := profileModule.OnUserRegistered(ctx, u.ID, u.MainCurrency, u.Timezone); err != nil {
+	central := centraltest.New(t, runner, func(ctx context.Context, userID uuid.UUID, mainCurrency, timezone string) error {
+		if err := profileModule.OnUserRegistered(ctx, userID, mainCurrency, timezone); err != nil {
 			return err
 		}
-		return ledgerModule.OnUserRegistered(ctx, u.ID, u.MainCurrency)
-	})
-	protected := api.Group("", auth.Require(identityModule.Authenticator()))
-	identityModule.Routes(api, api, protected)
+		return ledgerModule.OnUserRegistered(ctx, userID, mainCurrency)
+	}, receiptsModule.OnUserDeleted)
+	protected := api.Group("", auth.Require(central.Authenticator()))
 	profileModule.Routes(api, protected)
 	ledgerModule.Routes(protected)
 	reportsModule.Routes(protected)
 	creditModule.Routes(protected)
 	homeModule.Routes(protected)
 	receiptsModule.Routes(protected)
-	return &harness{router: router, pool: pool}
+	return &harness{router: router, pool: pool, central: central}
 }
 
 type response struct {
@@ -141,18 +134,14 @@ func (h *harness) signUp(t *testing.T, label string) string {
 	return h.signUpWith(t, label, nil)
 }
 
-// signUpWith registra con campos extra (main_currency, timezone).
+// signUpWith da de alta con campos extra (main_currency, timezone).
 func (h *harness) signUpWith(t *testing.T, label string, fields map[string]string) string {
 	t.Helper()
 	email := testsupport.UniqueEmail(label)
 	testsupport.DeleteUsersByEmail(t, h.pool, email)
-	payload := map[string]string{"email": email, "password": "vidanueva123"}
-	for k, v := range fields {
-		payload[k] = v
-	}
-	res := h.call(t, http.MethodPost, "/auth/register", "", payload)
-	require.Equal(t, http.StatusCreated, res.status, res.body)
-	return res.data()["tokens"].(map[string]any)["access_token"].(string)
+	id, token := h.central.SignUp(t, email, fields["main_currency"], fields["timezone"])
+	h.people.Store(token, id.String())
+	return token
 }
 
 func (h *harness) list(t *testing.T, token string) []map[string]any {

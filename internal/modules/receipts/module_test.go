@@ -10,9 +10,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
-	"strings"
+	"sync"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -21,10 +20,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/integrations/storage"
-	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/profile"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/receipts"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/auth"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/centralauth/centraltest"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/clock"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/httpserver"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/testsupport"
@@ -38,6 +37,9 @@ type harness struct {
 	router *gin.Engine
 	pool   *pgxpool.Pool
 	files  *storage.Memory
+
+	central *centraltest.Harness
+	people  sync.Map // token -> id de la persona
 }
 
 func newHarness(t *testing.T) *harness {
@@ -50,23 +52,15 @@ func newHarness(t *testing.T) *harness {
 	})
 	require.NoError(t, err)
 	runner := tx.NewRunner(pool)
-	identityModule, err := identity.New(identity.Deps{
-		Tx: runner, Clock: clock.System{}, JWTSecret: strings.Repeat("k", 64),
-		AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 30 * 24 * time.Hour,
-		PasswordParams: &identity.FastPasswordParams,
-	})
-	require.NoError(t, err)
 	profileModule := profile.New(runner, clock.System{})
 	files := storage.NewMemory()
 	receiptsModule := receipts.New(runner, clock.System{}, profileModule.Reader(), files)
-	identityModule.OnUserRegistered(func(ctx context.Context, u identity.NewUser) error {
-		return profileModule.OnUserRegistered(ctx, u.ID, u.MainCurrency, u.Timezone)
-	})
-	identityModule.OnUserDeleted(receiptsModule.OnUserDeleted)
-	protected := api.Group("", auth.Require(identityModule.Authenticator()))
-	identityModule.Routes(api, api, protected)
+	central := centraltest.New(t, runner, func(ctx context.Context, userID uuid.UUID, mainCurrency, timezone string) error {
+		return profileModule.OnUserRegistered(ctx, userID, mainCurrency, timezone)
+	}, receiptsModule.OnUserDeleted)
+	protected := api.Group("", auth.Require(central.Authenticator()))
 	receiptsModule.Routes(protected)
-	return &harness{router: router, pool: pool, files: files}
+	return &harness{router: router, pool: pool, files: files, central: central}
 }
 
 type response struct {
@@ -139,9 +133,9 @@ func (h *harness) register(t *testing.T) string {
 	t.Helper()
 	email := testsupport.UniqueEmail("receipts")
 	t.Cleanup(func() { testsupport.DeleteUsersByEmail(t, h.pool, email) })
-	res := h.call(t, http.MethodPost, "/auth/register", "", map[string]string{"email": email, "password": "vidanueva123"})
-	require.Equal(t, http.StatusCreated, res.status, res.body)
-	return res.data(t)["tokens"].(map[string]any)["access_token"].(string)
+	id, token := h.central.SignUp(t, email, "", "")
+	h.people.Store(token, id)
+	return token
 }
 
 func receiptBody(number string) map[string]any {
@@ -337,8 +331,8 @@ func TestDeletingTheAccountDeletesItsFiles(t *testing.T) {
 	require.Equal(t, http.StatusOK, h.upload(t, token, id, "pdf", "recibo.pdf", []byte("%PDF-1.4")).status)
 	require.Len(t, h.files.Keys(), 1)
 
-	res := h.call(t, http.MethodDelete, "/me", token, map[string]string{"password": "vidanueva123"})
-	require.Equal(t, http.StatusNoContent, res.status, res.body)
+	id2, _ := h.people.Load(token)
+	require.NoError(t, h.central.Users.Delete(context.Background(), id2.(uuid.UUID)))
 	assert.Empty(t, h.files.Keys())
 }
 

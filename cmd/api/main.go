@@ -24,11 +24,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/AtmosferaSoltec/atm-orbita-api/db"
-	"github.com/AtmosferaSoltec/atm-orbita-api/internal/integrations/mail"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/integrations/storage"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/credit"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/home"
-	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/ledger"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/loans"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/profile"
@@ -44,7 +42,6 @@ import (
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/health"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/httpserver"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/logger"
-	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/middleware"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/tx"
 )
 
@@ -100,36 +97,7 @@ func run() int {
 	}
 	health.Register(api, pool)
 
-	// Con RESEND_API_KEY los correos salen por Resend; sin ella (desarrollo), al
-	// log. Siempre en segundo plano, con reintentos.
-	var mailer mail.Mailer = mail.Console{Log: log}
-	if cfg.Mail.ResendAPIKey != "" {
-		mailer = mail.Resend{APIKey: cfg.Mail.ResendAPIKey, From: cfg.Mail.From}
-	}
-	mailQueue := mail.NewQueue(mailer, log, 4, 2*time.Second)
-	defer func() {
-		closeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		mailQueue.Close(closeCtx)
-	}()
-
 	runner := tx.NewRunner(pool)
-	identityModule, err := identity.New(identity.Deps{
-		Tx:                 runner,
-		Clock:              clock.System{},
-		JWTSecret:          cfg.JWTAccessSecret,
-		AccessTokenTTL:     cfg.AccessTokenTTL,
-		RefreshTokenTTL:    cfg.RefreshTokenTTL,
-		WebRefreshTokenTTL: cfg.WebRefreshTokenTTL,
-		GoogleWebClientID:  cfg.GoogleWebClientID,
-		Mailer:             mailQueue,
-		SecureCookies:      cfg.Env != config.Development,
-	})
-	if err != nil {
-		log.Error("modules", "error", err)
-		return 1
-	}
-
 	profileModule := profile.New(runner, clock.System{})
 	ledgerModule := ledger.New(runner, clock.System{}, profileModule.Reader())
 	reportsModule := reports.New(ledgerModule.ReportQuery(), profileModule.Reader())
@@ -148,45 +116,32 @@ func run() int {
 	receiptsModule := receipts.New(runner, clock.System{}, profileModule.Reader(), files)
 	loansModule := loans.New(runner, clock.System{}, profileModule.Reader())
 	servicesModule := services.New(runner, clock.System{}, profileModule.Reader())
-	identityModule.OnUserDeleted(receiptsModule.OnUserDeleted)
 
-	// El alta corre en una sola transacción: cuenta, sesión y, por cada módulo, lo
-	// que el usuario necesita desde el primer día.
-	identityModule.OnUserRegistered(func(ctx context.Context, user identity.NewUser) error {
-		if err := profileModule.OnUserRegistered(ctx, user.ID, user.MainCurrency, user.Timezone); err != nil {
-			return err
-		}
-		return ledgerModule.OnUserRegistered(ctx, user.ID, user.MainCurrency)
-	})
-
-	// Registro, inicio de sesión y renovación tienen un límite por IP más estrecho.
-	limited := api.Group("", middleware.NewRateLimiter(cfg.LoginRateLimitPerMinute).Middleware())
-	// Con AUTH_PUBLIC_KEY_BASE64 también valen los tokens de atm-auth-api (RS256); los
-	// propios siguen valiendo hasta que los usuarios se migren.
-	authenticator := identityModule.Authenticator()
-	if cfg.Auth.PublicKeyBase64 != "" {
-		verifier, err := centralauth.NewVerifier(cfg.Auth.PublicKeyBase64, cfg.Auth.Issuer)
-		if err != nil {
-			log.Error("central auth", "error", err)
-			return 1
-		}
-		people := centralauth.Users{
-			Tx: runner, Setup: func(ctx context.Context, userID uuid.UUID, mainCurrency, timezone string) error {
-				if err := profileModule.OnUserRegistered(ctx, userID, mainCurrency, timezone); err != nil {
-					return err
-				}
-				return ledgerModule.OnUserRegistered(ctx, userID, mainCurrency)
-			},
-			OnDelete:     []centralauth.DeletionHook{receiptsModule.OnUserDeleted},
-			MainCurrency: currency.Default, Timezone: "America/Lima",
-		}
-		authenticator = &centralauth.Authenticator{Verifier: verifier, Provisioner: people, Fallback: authenticator}
-		centralauth.UserDeletedRoute(api, verifier, func(c *gin.Context, userID uuid.UUID) error {
-			return people.Delete(c.Request.Context(), userID)
-		})
+	// Las personas llegan con el token RS256 de atm-auth-api. La primera vez que una
+	// persona hace una petición se crea su fila local, su perfil y sus datos iniciales.
+	verifier, err := centralauth.NewVerifier(cfg.Auth.PublicKeyBase64, cfg.Auth.Issuer)
+	if err != nil {
+		log.Error("central auth", "error", err)
+		return 1
 	}
+	people := centralauth.Users{
+		Tx: runner,
+		Setup: func(ctx context.Context, userID uuid.UUID, mainCurrency, timezone string) error {
+			if err := profileModule.OnUserRegistered(ctx, userID, mainCurrency, timezone); err != nil {
+				return err
+			}
+			return ledgerModule.OnUserRegistered(ctx, userID, mainCurrency)
+		},
+		OnDelete:     []centralauth.DeletionHook{receiptsModule.OnUserDeleted},
+		MainCurrency: currency.Default, Timezone: "America/Lima",
+	}
+	authenticator := &centralauth.Authenticator{Verifier: verifier, Provisioner: people, Fallback: noOwnTokens{}}
+	// atm-auth-api llama aquí antes de borrar la cuenta de una persona (ACCOUNT_DELETION_HOOKS).
+	centralauth.UserDeletedRoute(api, verifier, func(c *gin.Context, userID uuid.UUID) error {
+		return people.Delete(c.Request.Context(), userID)
+	})
 	protected := api.Group("", auth.Require(authenticator))
-	identityModule.Routes(api, limited, protected)
+	centralauth.MeRoute(protected, runner.DB)
 	profileModule.Routes(api, protected)
 	ledgerModule.Routes(protected)
 	reportsModule.Routes(protected)
@@ -241,4 +196,11 @@ func port() string {
 		return p
 	}
 	return "3001"
+}
+
+// noOwnTokens: Orbita ya no emite tokens propios; todo lo que no venga de atm-auth-api se rechaza.
+type noOwnTokens struct{}
+
+func (noOwnTokens) Authenticate(context.Context, string) (auth.Principal, error) {
+	return auth.Principal{}, auth.ErrUnauthorized
 }

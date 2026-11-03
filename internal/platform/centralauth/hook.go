@@ -1,6 +1,11 @@
 package centralauth
 
 import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 	"net/http"
 	"strings"
 
@@ -8,6 +13,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/apierror"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/auth"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/tx"
 )
 
 // UserDeletedRoute monta POST /internal/auth/user-deleted: atm-auth-api lo llama
@@ -43,5 +50,31 @@ func UserDeletedRoute(r gin.IRoutes, verifier *Verifier, remove func(c *gin.Cont
 			return
 		}
 		c.Status(http.StatusNoContent)
+	})
+}
+
+// MeRoute monta GET /me: quién es la persona autenticada, según la fila local.
+func MeRoute(protected gin.IRoutes, db func(ctx context.Context) tx.DBTX) {
+	protected.GET("/me", func(c *gin.Context) {
+		principal, _ := auth.FromContext(c.Request.Context())
+		var out struct {
+			ID        uuid.UUID `json:"id"`
+			Email     string    `json:"email"`
+			Name      *string   `json:"name"`
+			CreatedAt time.Time `json:"created_at"`
+		}
+		err := db(c.Request.Context()).QueryRow(c.Request.Context(),
+			`SELECT id, email, name, created_at FROM users WHERE id = $1`, principal.UserID).
+			Scan(&out.ID, &out.Email, &out.Name, &out.CreatedAt)
+		if errors.Is(err, pgx.ErrNoRows) {
+			apierror.Respond(c, apierror.ErrUnauthorized)
+			return
+		}
+		if err != nil {
+			apierror.Respond(c, err)
+			return
+		}
+		out.CreatedAt = out.CreatedAt.UTC()
+		apierror.OK(c, out)
 	})
 }

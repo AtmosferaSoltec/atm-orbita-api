@@ -10,7 +10,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // Environment es el valor de APP_ENV.
@@ -23,25 +22,15 @@ const (
 	Test        Environment = "test"
 )
 
-// minSecretLength: con openssl rand -base64 48 salen 64 caracteres.
-const minSecretLength = 32
-
 // Config es el entorno ya validado.
 type Config struct {
-	Env                     Environment
-	Port                    string
-	DatabaseURL             string
-	JWTAccessSecret         string
-	AccessTokenTTL          time.Duration
-	RefreshTokenTTL         time.Duration
-	WebRefreshTokenTTL      time.Duration
-	GoogleWebClientID       string
-	CORSOrigins             []string
-	RateLimitPerMinute      int
-	LoginRateLimitPerMinute int
-	Mail                    MailConfig
-	Storage                 StorageConfig
-	// Auth es atm-auth-api. Vacío: solo valen los tokens propios (los de identity).
+	Env                Environment
+	Port               string
+	DatabaseURL        string
+	CORSOrigins        []string
+	RateLimitPerMinute int
+	Storage            StorageConfig
+	// Auth es atm-auth-api: de ahí vienen todos los tokens.
 	Auth AuthConfig
 }
 
@@ -60,12 +49,6 @@ type StorageConfig struct {
 	Bucket          string
 }
 
-// MailConfig son los datos de Resend. Vacíos en desarrollo: el correo va al log.
-type MailConfig struct {
-	ResendAPIKey string
-	From         string
-}
-
 // IsProduction dice si corre en el servidor.
 func (c Config) IsProduction() bool { return c.Env == Production }
 
@@ -79,22 +62,12 @@ func LoadFrom(lookup func(string) string) (Config, error) {
 	r := reader{lookup: lookup}
 
 	cfg := Config{
-		Env:                     r.environment("APP_ENV"),
-		Port:                    r.port("PORT"),
-		DatabaseURL:             r.databaseURL("DATABASE_URL"),
-		JWTAccessSecret:         r.secret("JWT_ACCESS_SECRET"),
-		AccessTokenTTL:          time.Duration(r.positiveInt("ACCESS_TOKEN_TTL_SECONDS")) * time.Second,
-		RefreshTokenTTL:         time.Duration(r.positiveInt("REFRESH_TOKEN_TTL_DAYS")) * 24 * time.Hour,
-		WebRefreshTokenTTL:      time.Duration(r.optionalDays("WEB_REFRESH_TOKEN_TTL_DAYS", 90)) * 24 * time.Hour,
-		GoogleWebClientID:       r.optional("GOOGLE_WEB_CLIENT_ID"),
-		CORSOrigins:             r.list("CORS_ORIGIN"),
-		RateLimitPerMinute:      r.positiveInt("RATE_LIMIT_PER_MINUTE"),
-		LoginRateLimitPerMinute: r.positiveInt("LOGIN_RATE_LIMIT_PER_MINUTE"),
-		Mail: MailConfig{
-			ResendAPIKey: r.optional("RESEND_API_KEY"),
-			From:         r.optional("MAIL_FROM"),
-		},
-		Auth: AuthConfig{PublicKeyBase64: r.optional("AUTH_PUBLIC_KEY_BASE64"), Issuer: r.optional("AUTH_ISSUER")},
+		Env:                r.environment("APP_ENV"),
+		Port:               r.port("PORT"),
+		DatabaseURL:        r.databaseURL("DATABASE_URL"),
+		CORSOrigins:        r.list("CORS_ORIGIN"),
+		RateLimitPerMinute: r.positiveInt("RATE_LIMIT_PER_MINUTE"),
+		Auth:               AuthConfig{PublicKeyBase64: r.optional("AUTH_PUBLIC_KEY_BASE64"), Issuer: r.optional("AUTH_ISSUER")},
 		Storage: StorageConfig{
 			Endpoint:        r.optional("R2_ENDPOINT"),
 			AccessKeyID:     r.optional("R2_ACCESS_KEY_ID"),
@@ -103,18 +76,15 @@ func LoadFrom(lookup func(string) string) (Config, error) {
 		},
 	}
 
-	if cfg.GoogleWebClientID != "" && (!strings.HasSuffix(cfg.GoogleWebClientID, ".apps.googleusercontent.com") || strings.ContainsAny(cfg.GoogleWebClientID, " \t\n")) {
-		r.fail("GOOGLE_WEB_CLIENT_ID must be an OAuth web client ID ending in .apps.googleusercontent.com")
+	if cfg.Auth.PublicKeyBase64 == "" {
+		r.fail("AUTH_PUBLIC_KEY_BASE64 is required")
 	}
-
-	if (cfg.Auth.PublicKeyBase64 == "") != (cfg.Auth.Issuer == "") {
-		r.fail("AUTH_PUBLIC_KEY_BASE64 and AUTH_ISSUER must be set together")
+	if cfg.Auth.Issuer == "" {
+		r.fail("AUTH_ISSUER is required")
 	}
 
 	if cfg.IsProduction() {
 		r.requireInProduction("CORS_ORIGIN", len(cfg.CORSOrigins) > 0)
-		r.requireInProduction("RESEND_API_KEY", cfg.Mail.ResendAPIKey != "")
-		r.requireInProduction("MAIL_FROM", cfg.Mail.From != "")
 	}
 
 	if len(r.problems) > 0 {
@@ -188,14 +158,6 @@ func (r *reader) databaseURL(name string) string {
 	return value
 }
 
-func (r *reader) secret(name string) string {
-	value := r.required(name)
-	if value != "" && len(value) < minSecretLength {
-		r.fail("%s must have at least %d characters (generate it with: openssl rand -base64 48)", name, minSecretLength)
-	}
-	return value
-}
-
 func (r *reader) positiveInt(name string) int {
 	value := r.required(name)
 	if value == "" {
@@ -222,17 +184,4 @@ func (r *reader) requireInProduction(name string, present bool) {
 	if !present {
 		r.fail("%s is required in production", name)
 	}
-}
-
-func (r *reader) optionalDays(name string, fallback int) int {
-	value := r.optional(name)
-	if value == "" {
-		return fallback
-	}
-	days, err := strconv.Atoi(value)
-	if err != nil || days < 1 || days > 365 {
-		r.fail("%s must be between 1 and 365 days", name)
-		return fallback
-	}
-	return days
 }

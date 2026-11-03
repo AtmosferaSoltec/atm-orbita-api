@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -19,10 +18,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/identity"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/profile"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/services"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/auth"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/centralauth/centraltest"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/httpserver"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/testsupport"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/tx"
@@ -35,6 +34,9 @@ func (fixedClock) Now() time.Time { return time.Date(2026, 10, 24, 17, 0, 0, 0, 
 type harness struct {
 	router *gin.Engine
 	pool   *pgxpool.Pool
+
+	central *centraltest.Harness
+	people  sync.Map // token -> id de la persona
 }
 
 func newHarness(t *testing.T) *harness {
@@ -44,16 +46,13 @@ func newHarness(t *testing.T) *harness {
 	clock := fixedClock{}
 	router, api, err := httpserver.NewRouter(httpserver.Options{Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), RateLimitPerMinute: 10000})
 	require.NoError(t, err)
-	accounts, err := identity.New(identity.Deps{Tx: runner, Clock: clock, JWTSecret: strings.Repeat("t", 64), AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 30 * 24 * time.Hour, PasswordParams: &identity.FastPasswordParams})
-	require.NoError(t, err)
 	profiles := profile.New(runner, clock)
-	accounts.OnUserRegistered(func(ctx context.Context, user identity.NewUser) error {
-		return profiles.OnUserRegistered(ctx, user.ID, user.MainCurrency, user.Timezone)
+	central := centraltest.New(t, runner, func(ctx context.Context, userID uuid.UUID, mainCurrency, timezone string) error {
+		return profiles.OnUserRegistered(ctx, userID, mainCurrency, timezone)
 	})
-	protected := api.Group("", auth.Require(accounts.Authenticator()))
-	accounts.Routes(api, api, protected)
+	protected := api.Group("", auth.Require(central.Authenticator()))
 	services.New(runner, clock, profiles.Reader()).Routes(protected)
-	return &harness{router, pool}
+	return &harness{router: router, pool: pool, central: central}
 }
 
 type response struct {
@@ -89,9 +88,9 @@ func (h *harness) signUp(t *testing.T) string {
 	t.Helper()
 	email := testsupport.UniqueEmail("services")
 	testsupport.DeleteUsersByEmail(t, h.pool, email)
-	res := h.call(t, http.MethodPost, "/auth/register", "", map[string]string{"email": email, "password": "service-tests-123", "timezone": "America/Lima"})
-	require.Equal(t, 201, res.status, res.raw)
-	return res.data["tokens"].(map[string]any)["access_token"].(string)
+	id, token := h.central.SignUp(t, email, "", "America/Lima")
+	h.people.Store(token, id)
+	return token
 }
 
 func draft() map[string]any {
@@ -242,8 +241,8 @@ func TestDeletingAnAccountCascadesOnlyItsServices(t *testing.T) {
 	otherID := create(t, h, other, draft())
 	res := h.call(t, http.MethodPut, "/services/"+id+"/payments", owner, map[string]any{"payments": []any{payment(memberID(body), "2026-09")}})
 	require.Equal(t, 200, res.status)
-	deleted := h.call(t, http.MethodDelete, "/me", owner, map[string]string{"password": "service-tests-123"})
-	require.Equal(t, 204, deleted.status, deleted.raw)
+	ownerID, _ := h.people.Load(owner)
+	require.NoError(t, h.central.Users.Delete(context.Background(), ownerID.(uuid.UUID)))
 	for _, table := range []string{"services", "service_members", "service_member_payments"} {
 		var count int
 		column := "service_id"
