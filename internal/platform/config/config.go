@@ -29,25 +29,36 @@ type Config struct {
 	DatabaseURL        string
 	CORSOrigins        []string
 	RateLimitPerMinute int
-	Storage            StorageConfig
 	// Auth es atm-auth-api: de ahí vienen todos los tokens.
 	Auth AuthConfig
+	// Services son los servicios compartidos que Orbita llama con su token de servicio.
+	Services ServicesConfig
 }
 
-// AuthConfig verifica los tokens RS256 de atm-auth-api.
+// AuthConfig verifica los tokens RS256 de atm-auth-api y guarda las credenciales
+// con las que Orbita pide su token de servicio.
 type AuthConfig struct {
 	PublicKeyBase64 string
 	Issuer          string
+	URL             string
+	ClientID        string
+	// ClientSecret es opcional: vacío apaga los archivos y el PDF (503), no el API.
+	ClientSecret string
 }
 
-// StorageConfig son los datos de Cloudflare R2. Si falta alguno, los archivos no
-// se pueden guardar (los recibos sí) y el API responde STORAGE_UNAVAILABLE.
-type StorageConfig struct {
-	Endpoint        string
-	AccessKeyID     string
-	SecretAccessKey string
-	Bucket          string
+// ServicesConfig son las direcciones de atm-storage-api y atm-documents-api.
+type ServicesConfig struct {
+	StorageURL   string
+	DocumentsURL string
 }
+
+// Defaults de producción de los servicios compartidos.
+const (
+	defaultAuthURL      = "https://auth.atmosferast.com"
+	defaultClientID     = "orbita"
+	defaultStorageURL   = "https://storage.atmosferast.com"
+	defaultDocumentsURL = "https://documents.atmosferast.com"
+)
 
 // IsProduction dice si corre en el servidor.
 func (c Config) IsProduction() bool { return c.Env == Production }
@@ -67,12 +78,16 @@ func LoadFrom(lookup func(string) string) (Config, error) {
 		DatabaseURL:        r.databaseURL("DATABASE_URL"),
 		CORSOrigins:        r.list("CORS_ORIGIN"),
 		RateLimitPerMinute: r.positiveInt("RATE_LIMIT_PER_MINUTE"),
-		Auth:               AuthConfig{PublicKeyBase64: r.optional("AUTH_PUBLIC_KEY_BASE64"), Issuer: r.optional("AUTH_ISSUER")},
-		Storage: StorageConfig{
-			Endpoint:        r.optional("R2_ENDPOINT"),
-			AccessKeyID:     r.optional("R2_ACCESS_KEY_ID"),
-			SecretAccessKey: r.optional("R2_SECRET_ACCESS_KEY"),
-			Bucket:          r.optional("R2_BUCKET"),
+		Auth: AuthConfig{
+			PublicKeyBase64: r.optional("AUTH_PUBLIC_KEY_BASE64"),
+			Issuer:          r.optional("AUTH_ISSUER"),
+			URL:             r.httpURL("AUTH_URL", defaultAuthURL),
+			ClientID:        r.withDefault("AUTH_CLIENT_ID", defaultClientID),
+			ClientSecret:    r.optional("AUTH_CLIENT_SECRET"),
+		},
+		Services: ServicesConfig{
+			StorageURL:   r.httpURL("STORAGE_API_URL", defaultStorageURL),
+			DocumentsURL: r.httpURL("DOCUMENTS_API_URL", defaultDocumentsURL),
 		},
 	}
 
@@ -122,6 +137,23 @@ func (r *reader) required(name string) string {
 
 func (r *reader) optional(name string) string {
 	return strings.TrimSpace(r.lookup(name))
+}
+
+func (r *reader) withDefault(name, fallback string) string {
+	if value := r.optional(name); value != "" {
+		return value
+	}
+	return fallback
+}
+
+// httpURL lee una URL base http(s) sin barra final.
+func (r *reader) httpURL(name, fallback string) string {
+	value := strings.TrimRight(r.withDefault(name, fallback), "/")
+	parsed, err := url.Parse(value)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		r.fail("%s must be an http(s) URL", name)
+	}
+	return value
 }
 
 func (r *reader) environment(name string) Environment {

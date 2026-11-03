@@ -1,5 +1,5 @@
 // Package receipts son los recibos por honorarios de la web: su tope anual y los
-// archivos (XML y PDF) que se guardan con cada uno en R2. Lee "hoy" de profile.
+// archivos (XML y PDF) que se guardan con cada uno en atm-storage-api. Lee "hoy" de profile.
 //
 // Es la API pública del módulo: los demás módulos y main solo usan lo de aquí.
 package receipts
@@ -70,8 +70,9 @@ func (p profileSource) Today(ctx context.Context, userID uuid.UUID) (dates.Local
 // fileStorage adapta storage.Storage al puerto app.FileStorage.
 type fileStorage struct{ files storage.Storage }
 
-func (f fileStorage) Put(ctx context.Context, key, contentType string, data []byte) error {
-	return translate(f.files.Put(ctx, key, contentType, bytes.NewReader(data), int64(len(data))))
+func (f fileStorage) Put(ctx context.Context, ownerID uuid.UUID, fileName, contentType string, data []byte) (string, error) {
+	key, err := f.files.Put(ctx, ownerID, fileName, contentType, bytes.NewReader(data), int64(len(data)))
+	return key, translate(err)
 }
 
 func (f fileStorage) Open(ctx context.Context, key string) (io.ReadCloser, error) {
@@ -84,10 +85,6 @@ func (f fileStorage) Open(ctx context.Context, key string) (io.ReadCloser, error
 
 func (f fileStorage) Delete(ctx context.Context, keys ...string) error {
 	return translate(f.files.Delete(ctx, keys...))
-}
-
-func (f fileStorage) DeletePrefix(ctx context.Context, prefix string) error {
-	return translate(f.files.DeletePrefix(ctx, prefix))
 }
 
 func (f fileStorage) DownloadURL(ctx context.Context, key string, ttl time.Duration, fileName, contentType string, download bool) (string, error) {

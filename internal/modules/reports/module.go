@@ -12,8 +12,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/integrations/documents"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/ledger"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/profile"
+	reportsdocuments "github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/reports/adapters/documents"
 	reportshttp "github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/reports/adapters/http"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/reports/app"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/reports/domain"
@@ -26,10 +28,22 @@ type Module struct {
 	handler *reportshttp.Handler
 }
 
+// PDFOptions son las dependencias del PDF (GET /reports/summary.pdf). Con
+// Documents en nil, o sin credenciales, la ruta responde 503 DOCUMENTS_UNAVAILABLE.
+type PDFOptions struct {
+	Documents *documents.Client
+	// Quota limita los PDF por persona; nil no limita.
+	Quota reportshttp.Quota
+}
+
 // New crea el módulo.
-func New(query ledger.ReportQuery, profiles profile.Reader) *Module {
-	service := app.NewService(totals{query}, profileSource{profiles})
-	return &Module{service: service, handler: reportshttp.NewHandler(service)}
+func New(query ledger.ReportQuery, profiles profile.Reader, pdf PDFOptions) *Module {
+	var renderer app.PDF
+	if pdf.Documents != nil {
+		renderer = reportsdocuments.NewPeriodReport(pdf.Documents)
+	}
+	service := app.NewService(totals{query}, profileSource{profiles}, renderer)
+	return &Module{service: service, handler: reportshttp.NewHandler(service, pdf.Quota)}
 }
 
 // Routes monta las rutas del módulo; piden sesión.

@@ -3,6 +3,7 @@ package app
 
 import (
 	"context"
+	"errors"
 
 	"github.com/google/uuid"
 
@@ -21,15 +22,39 @@ type Profile interface {
 	Today(ctx context.Context, userID uuid.UUID) (dates.LocalDate, error)
 }
 
+// PDF dibuja el resumen como PDF (atm-documents-api). El módulo no tiene lógica de
+// PDF: solo entrega las cifras.
+type PDF interface {
+	// Enabled dice si hay con qué generarlo (credenciales de servicio).
+	Enabled() bool
+	// Render devuelve ErrPDFDisabled o ErrPDFFailed si no pudo.
+	Render(ctx context.Context, summary Summary) ([]byte, error)
+}
+
+// Errores del PDF.
+var (
+	// ErrPDFDisabled: no hay credenciales del servicio de documentos.
+	ErrPDFDisabled = errors.New("pdf generation is not configured")
+	// ErrPDFFailed: el servicio de documentos no respondió o rechazó la petición.
+	ErrPDFFailed = errors.New("pdf generation failed")
+	// ErrNothingToReport: el periodo no tiene movimientos, no hay qué imprimir.
+	ErrNothingToReport = errors.New("period without movements")
+)
+
+// MaxPDFDays es el periodo más largo que acepta el servicio de documentos
+// (fechas inclusive).
+const MaxPDFDays = 366
+
 // Service es el caso de uso de los reportes.
 type Service struct {
 	totals  Totals
 	profile Profile
+	pdf     PDF
 }
 
-// NewService crea el servicio.
-func NewService(totals Totals, profile Profile) *Service {
-	return &Service{totals: totals, profile: profile}
+// NewService crea el servicio. pdf puede ser nil: el PDF queda apagado.
+func NewService(totals Totals, profile Profile, pdf PDF) *Service {
+	return &Service{totals: totals, profile: profile, pdf: pdf}
 }
 
 // Summary es el reporte de un periodo: un bloque por moneda.
@@ -63,4 +88,33 @@ func (s *Service) Summary(ctx context.Context, userID uuid.UUID, from, to string
 	}
 	out.Currencies = domain.Build(rows, main)
 	return out, nil
+}
+
+// PreparePDF arma el resumen del PDF con el mismo caso de uso de Summary (mismas
+// cifras, mismo recorte de `to` a hoy, mismo RANGE_INVALID) y le suma lo propio
+// del PDF: que esté habilitado, que el periodo no pase de MaxPDFDays y que haya
+// movimientos. Hasta aquí no se ha gastado cupo ni llamado a nadie.
+func (s *Service) PreparePDF(ctx context.Context, userID uuid.UUID, from, to string) (Summary, error) {
+	if s.pdf == nil || !s.pdf.Enabled() {
+		return Summary{}, ErrPDFDisabled
+	}
+	summary, err := s.Summary(ctx, userID, from, to)
+	if err != nil {
+		return Summary{}, err
+	}
+	if days := int(summary.To.Time().Sub(summary.From.Time()).Hours()/24) + 1; days > MaxPDFDays {
+		return Summary{}, &domain.ValidationError{Fields: []domain.FieldError{{Field: "to", Code: domain.CodeRangeInvalid}}}
+	}
+	if len(summary.Currencies) == 0 {
+		return Summary{}, ErrNothingToReport
+	}
+	return summary, nil
+}
+
+// RenderPDF genera el PDF de un resumen ya preparado. No guarda nada.
+func (s *Service) RenderPDF(ctx context.Context, summary Summary) ([]byte, error) {
+	if s.pdf == nil {
+		return nil, ErrPDFDisabled
+	}
+	return s.pdf.Render(ctx, summary)
 }

@@ -38,7 +38,7 @@ type Receipts interface {
 	Update(ctx context.Context, userID uuid.UUID, r domain.Receipt) error
 	SetCollected(ctx context.Context, userID, id uuid.UUID, on *dates.LocalDate) error
 	// Delete borra el recibo (sus documentos se van por cascada) y devuelve las
-	// llaves de R2 que tenía.
+	// llaves de archivo que tenía.
 	Delete(ctx context.Context, userID, id uuid.UUID) ([]string, error)
 }
 
@@ -58,16 +58,20 @@ type Documents interface {
 	Replace(ctx context.Context, userID uuid.UUID, doc domain.Document) (string, error)
 	// Delete devuelve la llave del archivo borrado.
 	Delete(ctx context.Context, userID, receiptID uuid.UUID, kind domain.DocumentKind) (string, error)
+	// StorageKeysOfUser son las referencias de todos los archivos de la persona:
+	// el servicio de archivos no deja listar, así que la lista sale de aquí.
+	StorageKeysOfUser(ctx context.Context, userID uuid.UUID) ([]string, error)
 }
 
-// FileStorage es el almacenamiento de archivos (R2). Devuelve
-// domain.ErrStorageDisabled si no está configurado.
+// FileStorage es el almacenamiento de archivos (atm-storage-api). Devuelve
+// domain.ErrStorageDisabled si no está configurado. Las llaves las genera él.
 type FileStorage interface {
-	Put(ctx context.Context, key, contentType string, data []byte) error
+	// Put guarda el archivo a nombre de la persona y devuelve su llave.
+	Put(ctx context.Context, ownerID uuid.UUID, fileName, contentType string, data []byte) (string, error)
 	// Open devuelve domain.ErrNotFound si el objeto ya no está.
 	Open(ctx context.Context, key string) (io.ReadCloser, error)
+	// Delete ignora las llaves que ya no existen.
 	Delete(ctx context.Context, keys ...string) error
-	DeletePrefix(ctx context.Context, prefix string) error
 	DownloadURL(ctx context.Context, key string, ttl time.Duration, fileName, contentType string, download bool) (string, error)
 }
 
@@ -220,7 +224,7 @@ func (s *Service) SetCollected(ctx context.Context, userID, id uuid.UUID, on *da
 	return s.deps.Receipts.Get(ctx, userID, id)
 }
 
-// Delete borra el recibo y, ya confirmado, sus archivos de R2.
+// Delete borra el recibo y, ya confirmado, sus archivos.
 func (s *Service) Delete(ctx context.Context, userID, id uuid.UUID) error {
 	keys, err := s.deps.Receipts.Delete(ctx, userID, id)
 	if err != nil {
@@ -271,8 +275,9 @@ func (s *Service) SetLimit(ctx context.Context, userID uuid.UUID, year int, amou
 }
 
 // Upload guarda un archivo del recibo, en lugar del anterior del mismo tipo.
-// Primero sube a R2 y luego guarda la fila: si la base falla, el objeto nuevo
-// se borra; si todo sale bien, se borra el anterior.
+// Primero sube el archivo (el almacenamiento le da su llave) y luego guarda la
+// fila: si la base falla, el archivo nuevo se borra; si todo sale bien, se borra
+// el anterior.
 func (s *Service) Upload(ctx context.Context, userID, receiptID uuid.UUID, kind domain.DocumentKind, fileName string, data []byte) (domain.Document, error) {
 	receipt, err := s.deps.Receipts.Get(ctx, userID, receiptID)
 	if err != nil {
@@ -286,10 +291,12 @@ func (s *Service) Upload(ctx context.Context, userID, receiptID uuid.UUID, kind 
 		FileName: domain.CleanFileName(fileName, kind), SizeBytes: len(data),
 		ContentType: kind.ContentType(), UploadedAt: s.deps.Clock.Now(),
 	}
-	doc.StorageKey = domain.StorageKey(userID, receiptID, doc.ID, kind)
-	if err := s.deps.Storage.Put(ctx, doc.StorageKey, doc.ContentType, bytes.Clone(data)); err != nil {
+	// La persona es su propia "empresa" en el servicio de archivos.
+	key, err := s.deps.Storage.Put(ctx, userID, doc.FileName, doc.ContentType, bytes.Clone(data))
+	if err != nil {
 		return domain.Document{}, err
 	}
+	doc.StorageKey = key
 	var previous string
 	err = s.deps.Tx.InTx(ctx, func(ctx context.Context) error {
 		previous, err = s.deps.Documents.Replace(ctx, userID, doc)
@@ -305,7 +312,7 @@ func (s *Service) Upload(ctx context.Context, userID, receiptID uuid.UUID, kind 
 	return doc, nil
 }
 
-// DownloadURL firma una URL corta para bajar el archivo directo de R2.
+// DownloadURL da una URL firmada corta para bajar el archivo directo del almacenamiento.
 func (s *Service) DownloadURL(ctx context.Context, userID, receiptID uuid.UUID, kind domain.DocumentKind, download bool) (string, error) {
 	doc, err := s.deps.Documents.Get(ctx, userID, receiptID, kind)
 	if err != nil {
@@ -316,7 +323,7 @@ func (s *Service) DownloadURL(ctx context.Context, userID, receiptID uuid.UUID, 
 
 // Content abre el archivo para mostrarlo dentro de la web (el XML formateado, el
 // PDF embebido). Leerlo de la URL firmada desde el navegador pediría CORS en el
-// bucket, que la llave de R2 no puede configurar (ver plan 18, desviaciones).
+// bucket, que Orbita no controla (ver plan 18, desviaciones).
 func (s *Service) Content(ctx context.Context, userID, receiptID uuid.UUID, kind domain.DocumentKind) (domain.Document, io.ReadCloser, error) {
 	doc, err := s.deps.Documents.Get(ctx, userID, receiptID, kind)
 	if err != nil {
@@ -339,12 +346,20 @@ func (s *Service) DeleteDocument(ctx context.Context, userID, receiptID uuid.UUI
 	return nil
 }
 
-// OnUserDeleted borra de R2 todos los archivos de la persona. Corre dentro de la
-// transacción de eliminar la cuenta: si R2 falla, la cuenta no se borra (así no
-// quedan archivos de alguien que ya no existe). Sin R2 configurado no hay nada
-// que borrar.
+// OnUserDeleted borra los archivos de la persona. Corre dentro de la transacción
+// de eliminar la cuenta, antes de que la cascada borre las filas: de ellas sale
+// la lista de llaves (el servicio de archivos no permite listar por token de
+// servicio). Si el borrado falla, la cuenta no se borra y se puede reintentar.
+// Sin almacenamiento configurado no hay nada que borrar.
 func (s *Service) OnUserDeleted(ctx context.Context, userID uuid.UUID) error {
-	err := s.deps.Storage.DeletePrefix(ctx, domain.UserPrefix(userID))
+	keys, err := s.deps.Documents.StorageKeysOfUser(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("list receipt files: %w", err)
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	err = s.deps.Storage.Delete(ctx, keys...)
 	if errors.Is(err, domain.ErrStorageDisabled) {
 		return nil
 	}

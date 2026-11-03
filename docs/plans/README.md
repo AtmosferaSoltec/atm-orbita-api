@@ -4,7 +4,7 @@ Planes para construir el backend real de la app Android `atm-orbita-android`, si
 
 - Escritos el 21 oct 2026, tras revisar completo el proyecto Android: sus documentos (`docs/01`…`06`, `ORBITA_SPEC.md`, `CLAUDE.md`), el dominio, `data/demo`, los ViewModels, las pantallas y sus pruebas.
 - **Fuente de verdad de las reglas:** el código de Android (`data/demo` y `domain`). Donde sus documentos dicen otra cosa, manda el código y la diferencia queda anotada en el plan.
-- Estado: **aprobados el 21 oct 2026**, con las decisiones de abajo. Se implementan de a uno; del 00 al 13 están hechos (el 09 se hizo antes que el 08, que depende de él). Quedan el 14 y el 15, opcionales.
+- Estado: **aprobados el 21 oct 2026**, con las decisiones de abajo. Se implementan de a uno; del 00 al 13 están hechos (el 09 se hizo antes que el 08, que depende de él). Queda el 14, opcional.
 - Rama: todo en `develop`. Flujo `develop` → `main` → `production`; promover lo decide el usuario.
 
 ## Orden y dependencias
@@ -28,13 +28,15 @@ Un plan = una funcionalidad que se entrega, se prueba y se revisa sola. Se ejecu
 | 12 | [Eliminar cuenta](12-identity-delete-account.md) | `identity` + todos | Ajustes → Eliminar cuenta | 01–10 | Hecho |
 | 13 | [Integración con Android (transversal)](13-android-integration.md) | — | Todas | Se aplica en cada plan | Hecho |
 | 14 | [Tipo de cambio automático](14-fx-automatic.md) | `profile` | Ajustes → Automático | 02 | Fase tardía, sin proveedor |
-| 15 | [Exportar reporte a PDF](15-reports-pdf.md) | `reports` | Reportes → PDF | 07 | Fase tardía |
+| 15 | [Exportar reporte a PDF](15-reports-pdf.md) | `reports`, `integrations/documents` | Reportes → PDF | 07, 22, 23 | Hecho (2 nov 2026), vía atm-documents-api |
 | 16 | [Registro rápido y funciones opcionales](16-quick-entry-preferences.md) | `profile` | Ajustes (nueva sección), Nuevo movimiento, barra inferior, Inicio | 02, 04, 09, 13 | Pendiente |
 | 17 | [Sesión para la web y nombre de la cuenta](17-identity-web-sessions-and-name.md) | `identity` | Web: Iniciar sesión, Registro (Android sin cambios) | 01 | Hecho |
 | 18 | [Recibos por honorarios](18-receipts.md) | `receipts`, `integrations/storage` | Web: Recibos (sin pantallas en Android) | 02, 17 | Hecho |
 | 19 | [Google sign-in and long web sessions](19-google-sign-in.md) | `identity` | Web login and registration; Android unchanged | 01, 11, 17 | Implemented; real client configured locally, full account sign-in and deployment pending |
 | 20 | [Real services and shared payments](20-services.md) | `services` | Web services only | 01, 02, 17 | Implemented and tested locally against the server database |
 | 21 | [Eliminar la cuenta confirmando con Google](21-google-account-deletion.md) | `identity` | Web `/delete-account`; Android (ajuste pendiente en la app) | 12, 19 | Hecho |
+| 22 | [La autenticación pasa a atm-auth-api](22-auth-moved-to-atm-auth.md) | `centralauth` | Todas | — | Hecho |
+| 23 | [Archivos y PDF por los servicios compartidos de ATM](23-shared-services-storage-and-documents.md) | `integrations/storage`, `integrations/servicetoken`, `integrations/documents`, `receipts`, `reports` | Web: Recibos; Reportes → PDF | 15, 18, 22 | Hecho |
 
 ```
 00 ─▶ 01 ─▶ 02 ─▶ 03 ─▶ 04 ─▶ 05 ─┬─▶ 06

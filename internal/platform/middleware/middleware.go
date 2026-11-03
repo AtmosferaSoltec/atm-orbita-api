@@ -92,7 +92,7 @@ func CORS(allowed []string) gin.HandlerFunc {
 			// La web manda la cookie de sesión (plan 17).
 			h.Set("Access-Control-Allow-Credentials", "true")
 			h.Add("Vary", "Origin")
-			h.Set("Access-Control-Expose-Headers", RequestIDHeader+", Retry-After")
+			h.Set("Access-Control-Expose-Headers", RequestIDHeader+", Retry-After, Content-Disposition")
 			if c.Request.Method == http.MethodOptions {
 				h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 				h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Session-Transport, "+RequestIDHeader)
@@ -178,4 +178,48 @@ func (l *RateLimiter) limiterFor(ip string) *rate.Limiter {
 	}
 	v.lastSeen = now
 	return v.limiter
+}
+
+// QuotaLimiter permite como mucho limit usos por clave en cada ventana móvil, en
+// memoria (basta con una réplica). A diferencia de RateLimiter, que frena ráfagas
+// por IP, esto acota una operación cara por persona (por ejemplo, 10 PDF por hora).
+type QuotaLimiter struct {
+	limit  int
+	window time.Duration
+	mu     sync.Mutex
+	uses   map[string][]time.Time
+	now    func() time.Time
+}
+
+// NewQuotaLimiter crea el límite: limit usos por window.
+func NewQuotaLimiter(limit int, window time.Duration) *QuotaLimiter {
+	return &QuotaLimiter{limit: limit, window: window, uses: map[string][]time.Time{}, now: time.Now}
+}
+
+// Allow cuenta un uso de key. Si ya gastó su cupo devuelve false y cuánto falta
+// para que se libere el más antiguo. Un uso rechazado no se cuenta.
+func (l *QuotaLimiter) Allow(key string) (retryAfter time.Duration, ok bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	// Limpieza perezosa de quien ya no tiene usos vigentes.
+	if len(l.uses) > 10_000 {
+		for k, times := range l.uses {
+			if len(times) == 0 || now.Sub(times[len(times)-1]) >= l.window {
+				delete(l.uses, k)
+			}
+		}
+	}
+	recent := l.uses[key][:0]
+	for _, at := range l.uses[key] {
+		if now.Sub(at) < l.window {
+			recent = append(recent, at)
+		}
+	}
+	if len(recent) >= l.limit {
+		l.uses[key] = recent
+		return l.window - now.Sub(recent[0]), false
+	}
+	l.uses[key] = append(recent, now)
+	return 0, true
 }

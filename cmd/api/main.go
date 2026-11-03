@@ -24,6 +24,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/AtmosferaSoltec/atm-orbita-api/db"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/integrations/documents"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/integrations/servicetoken"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/integrations/storage"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/credit"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/home"
@@ -42,8 +44,12 @@ import (
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/health"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/httpserver"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/logger"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/middleware"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/tx"
 )
+
+// reportPDFsPerHour es el límite de PDF del reporte por persona (plan 15).
+const reportPDFsPerHour = 10
 
 func main() {
 	if len(os.Args) > 1 {
@@ -100,18 +106,30 @@ func run() int {
 	runner := tx.NewRunner(pool)
 	profileModule := profile.New(runner, clock.System{})
 	ledgerModule := ledger.New(runner, clock.System{}, profileModule.Reader())
-	reportsModule := reports.New(ledgerModule.ReportQuery(), profileModule.Reader())
+	// Token de servicio del sistema orbita: lo comparten storage-api (archivos de los
+	// recibos) y documents-api (PDF del reporte). Sin AUTH_CLIENT_SECRET ambos quedan
+	// apagados (503) y el resto del API funciona.
+	serviceTokens := servicetoken.New(servicetoken.Config{
+		AuthURL: cfg.Auth.URL, ClientID: cfg.Auth.ClientID, ClientSecret: cfg.Auth.ClientSecret,
+	})
+	documentsClient := documents.NewClient(cfg.Services.DocumentsURL, serviceTokens)
+	if !documentsClient.Configured() {
+		log.Warn("service token not configured: report PDF is disabled")
+	}
+	reportsModule := reports.New(ledgerModule.ReportQuery(), profileModule.Reader(), reports.PDFOptions{
+		Documents: documentsClient,
+		Quota:     middleware.NewQuotaLimiter(reportPDFsPerHour, time.Hour),
+	})
 	creditModule := credit.New(runner, clock.System{}, ledgerModule.CategoryReader(), profileModule.Reader(), ledgerModule.PaymentLedger())
 	ledgerModule.OnPaymentDeleted(creditModule)
 	homeModule := home.New(profileModule.Reader(), ledgerModule.HomeReader(), reportsModule.Reader(), creditModule.CreditSummary())
 
-	// Archivos de los recibos (plan 18): R2 si está configurado.
+	// Archivos de los recibos (plan 18): atm-storage-api con el token de servicio.
 	var files storage.Storage = storage.Unavailable{}
-	r2 := storage.R2Config(cfg.Storage)
-	if r2.Configured() {
-		files = storage.NewR2(r2)
+	if api := storage.NewStorageAPI(cfg.Services.StorageURL, serviceTokens); api.Configured() {
+		files = api
 	} else {
-		log.Warn("storage not configured: receipt files are disabled")
+		log.Warn("service token not configured: receipt files are disabled")
 	}
 	receiptsModule := receipts.New(runner, clock.System{}, profileModule.Reader(), files)
 	loansModule := loans.New(runner, clock.System{}, profileModule.Reader())

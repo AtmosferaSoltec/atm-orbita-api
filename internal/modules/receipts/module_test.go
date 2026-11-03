@@ -331,9 +331,37 @@ func TestDeletingTheAccountDeletesItsFiles(t *testing.T) {
 	require.Equal(t, http.StatusOK, h.upload(t, token, id, "pdf", "recibo.pdf", []byte("%PDF-1.4")).status)
 	require.Len(t, h.files.Keys(), 1)
 
+	// Los archivos de otra persona no se tocan: la lista sale de sus filas.
+	stranger := h.register(t)
+	strangerReceipt := h.createReceipt(t, stranger, "200")["id"].(string)
+	require.Equal(t, http.StatusOK, h.upload(t, stranger, strangerReceipt, "pdf", "otro.pdf", []byte("%PDF-1.4")).status)
+	require.Len(t, h.files.Keys(), 2)
+
 	id2, _ := h.people.Load(token)
 	require.NoError(t, h.central.Users.Delete(context.Background(), id2.(uuid.UUID)))
-	assert.Empty(t, h.files.Keys())
+	require.Len(t, h.files.Keys(), 1)
+	strangerID, _ := h.people.Load(stranger)
+	object, ok := h.files.Object(h.files.Keys()[0])
+	require.True(t, ok)
+	assert.Equal(t, strangerID, object.OwnerID)
+}
+
+func TestDocumentsAreStoredUnderTheOwnerAndKeepTheStorageReference(t *testing.T) {
+	h := newHarness(t)
+	token := h.register(t)
+	id := h.createReceipt(t, token, "109")["id"].(string)
+	require.Equal(t, http.StatusOK, h.upload(t, token, id, "pdf", "recibo.pdf", []byte("%PDF-1.4")).status)
+
+	userID, _ := h.people.Load(token)
+	key := h.files.Keys()[0]
+	object, _ := h.files.Object(key)
+	assert.Equal(t, userID, object.OwnerID, "the person is the company_id")
+	assert.Equal(t, "recibo.pdf", object.FileName)
+
+	var stored string
+	require.NoError(t, h.pool.QueryRow(context.Background(),
+		`SELECT storage_key FROM receipt_documents WHERE receipt_id = $1`, id).Scan(&stored))
+	assert.Equal(t, key, stored, "the row keeps the reference storage returned")
 }
 
 func TestDocumentContentIsServedForViewing(t *testing.T) {

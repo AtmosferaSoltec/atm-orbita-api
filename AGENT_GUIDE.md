@@ -44,7 +44,7 @@ El repo trae lo mínimo: un servidor Gin con `/api/v1/health`, el `Dockerfile`, 
 | Logs | `log/slog` en JSON, con `request_id` en cada línea |
 | IDs | UUID v7 |
 | Correo | Resend + plantillas MJML (ver 8) |
-| Archivos | Cloudflare R2 por API S3 (ver 9) |
+| Archivos | atm-storage-api, con el token de servicio de Orbita (ver 9) |
 | Tests | `testing` + `testify`; integración contra Postgres real |
 | Lint | `golangci-lint` + `gofmt` |
 
@@ -102,7 +102,7 @@ docs/
 **Aislamiento y resiliencia (que si algo se rompe no se rompa para todos):**
 - Middleware `recover` por petición: un `panic` en un handler devuelve 500 y se registra; no tumba el proceso.
 - Timeouts en servidor HTTP, consultas y llamadas externas; cierre ordenado (`graceful shutdown`).
-- Integraciones externas (correo, R2, tipo de cambio) detrás de puertos y **nunca bloquean** la ruta crítica: si Resend falla, el registro igual se completa y el correo se reintenta.
+- Integraciones externas (almacenamiento, PDF, tipo de cambio) detrás de puertos y **nunca bloquean** la ruta crítica: si Resend falla, el registro igual se completa y el correo se reintenta.
 - `GET /api/v1/health` (liveness) y `GET /api/v1/health/ready` (comprueba la BD).
 - Desplegar una versión mala se revierte en minutos relanzando el tag anterior (ver sección 6).
 
@@ -131,7 +131,7 @@ Autenticación (detalles en su plan, con las decisiones de la sección 11):
 
 Los **nombres** están en `.env.example` (sin valores). El usuario llena el `.env`. Cada variable nueva se agrega a `.env.example` con un comentario, y a la validación de arranque. El `.env` real nunca se sube a git.
 
-Grupos: `APP_ENV`, `PORT`, `DATABASE_URL`, `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_DAYS`, `CORS_ORIGIN`, límites de rate limit, `RESEND_API_KEY`, `MAIL_FROM`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`.
+Grupos: `APP_ENV`, `PORT`, `DATABASE_URL`, `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_DAYS`, `CORS_ORIGIN`, límites de rate limit, `AUTH_PUBLIC_KEY_BASE64`, `AUTH_ISSUER`, `AUTH_URL`, `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET`, `STORAGE_API_URL`, `DOCUMENTS_API_URL` (JWT, Resend y R2 ya no se usan: ver plan 22 y 23).
 
 ---
 
@@ -202,11 +202,11 @@ El usuario trabaja **siempre con migraciones**, como Prisma: el esquema evolucio
 - Correos mínimos: recuperar contraseña con un **código de 6 dígitos** (decisión del usuario, 21 oct 2026): vence a los 15 minutos, admite 5 intentos por código y hasta 3 envíos por usuario cada 24 horas; se guarda solo su hash. La app lo pide en tres pasos: correo → código → contraseña nueva (ver `docs/plans/11-identity-password-recovery.md`). Verificación de correo: se hará más adelante.
 - Envío asíncrono con reintentos; nunca dentro de la transacción del caso de uso.
 
-## 9. Almacenamiento (Cloudflare R2)
+## 9. Almacenamiento (atm-storage-api)
 
-- Puerto `Storage` en `internal/integrations/storage`; implementación R2 con `aws-sdk-go-v2/service/s3` apuntando al endpoint de R2 y una implementación local para desarrollo.
+- Puerto `Storage` en `internal/integrations/storage`; implementación `StorageAPI` (HTTP a atm-storage-api con el token de servicio del sistema `orbita`, de `internal/integrations/servicetoken`), `Memory` para pruebas y `Unavailable` sin `AUTH_CLIENT_SECRET`. Ya no hay Cloudflare R2 en este repo (plan 23).
+- El almacenamiento genera el id del archivo; Orbita guarda ese id (`receipt_documents.storage_key`), nunca una URL firmada.
 - Los archivos nunca pasan por el repositorio; se entregan por URL firmada de corta duración.
-- No se usa hoy para nada de Orbita; créalo solo cuando un plan lo necesite.
 
 ---
 

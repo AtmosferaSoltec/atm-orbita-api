@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -17,6 +18,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/integrations/documents"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/integrations/servicetoken"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/integrations/storage"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/credit"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/modules/home"
@@ -28,6 +31,7 @@ import (
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/centralauth/centraltest"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/clock"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/httpserver"
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/middleware"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/testsupport"
 	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/tx"
 )
@@ -40,6 +44,8 @@ type harness struct {
 	pool    *pgxpool.Pool
 	central *centraltest.Harness
 	people  sync.Map // token -> id de la persona
+
+	documents *fakeDocuments
 }
 
 func newHarness(t *testing.T) *harness {
@@ -61,7 +67,12 @@ func newHarnessAt(t *testing.T, c clock.Clock) *harness {
 	runner := tx.NewRunner(pool)
 	profileModule := profile.New(runner, c)
 	ledgerModule := ledger.New(runner, c, profileModule.Reader())
-	reportsModule := reports.New(ledgerModule.ReportQuery(), profileModule.Reader())
+	fake := newFakeDocuments(t)
+	tokens := servicetoken.New(servicetoken.Config{AuthURL: fake.server.URL, ClientID: "orbita", ClientSecret: "s3cret"})
+	reportsModule := reports.New(ledgerModule.ReportQuery(), profileModule.Reader(), reports.PDFOptions{
+		Documents: documents.NewClient(fake.server.URL, tokens),
+		Quota:     middleware.NewQuotaLimiter(3, time.Hour),
+	})
 	creditModule := credit.New(runner, c, ledgerModule.CategoryReader(), profileModule.Reader(), ledgerModule.PaymentLedger())
 	ledgerModule.OnPaymentDeleted(creditModule)
 	homeModule := home.New(profileModule.Reader(), ledgerModule.HomeReader(), reportsModule.Reader(), creditModule.CreditSummary())
@@ -79,7 +90,7 @@ func newHarnessAt(t *testing.T, c clock.Clock) *harness {
 	creditModule.Routes(protected)
 	homeModule.Routes(protected)
 	receiptsModule.Routes(protected)
-	return &harness{router: router, pool: pool, central: central}
+	return &harness{router: router, pool: pool, central: central, documents: fake}
 }
 
 type response struct {

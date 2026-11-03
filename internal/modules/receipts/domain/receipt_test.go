@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -123,12 +122,7 @@ func TestCheckFile(t *testing.T) {
 	assert.ErrorIs(t, CheckFile(KindPDF, make([]byte, MaxPDFBytes+1), r), ErrFileInvalid)
 }
 
-func TestStorageKeyAndFileName(t *testing.T) {
-	user, receipt, doc := uuid.New(), uuid.New(), uuid.New()
-	key := StorageKey(user, receipt, doc, KindPDF)
-	assert.True(t, strings.HasPrefix(key, UserPrefix(user)))
-	assert.True(t, strings.HasSuffix(key, doc.String()+".pdf"))
-
+func TestCleanFileName(t *testing.T) {
 	assert.Equal(t, "recibo.pdf", CleanFileName(`C:\Users\joel\recibo.pdf`, KindPDF))
 	assert.Equal(t, "recibo.xml", CleanFileName("  ", KindXML))
 	assert.Equal(t, "evil.xml", CleanFileName("../../evil.xml", KindXML))

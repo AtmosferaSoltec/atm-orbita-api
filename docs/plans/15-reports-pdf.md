@@ -1,10 +1,10 @@
-# 15 · Exportar el reporte a PDF (fase tardía)
+# 15 · Exportar el reporte a PDF
+
+**Estado:** hecho (2 nov 2026). El PDF lo dibuja **atm-documents-api**; este repo no tiene lógica de PDF (ni librería, ni fuentes).
 
 ## Objetivo
 
 Descargar el reporte de un periodo como PDF, con **solo el resumen** (totales y rankings), sin la lista de movimientos (guía §11).
-
-> Fase tardía: se implementa después de los planes 00 a 12. Hoy Reportes muestra "PDF · próximamente", inactivo.
 
 ## Pantallas de Android que cubre
 
@@ -12,27 +12,51 @@ Descargar el reporte de un periodo como PDF, con **solo el resumen** (totales y 
 
 ## Módulo
 
-`reports`.
+`reports` (con `integrations/documents` y `integrations/servicetoken`).
 
-## Endpoints
+## Endpoint
 
 | Método y ruta | Query | Respuesta |
 |---|---|---|
-| `GET /reports/summary.pdf` | `from`, `to` | `200 application/pdf`, `Content-Disposition: attachment; filename="orbita-2026-09.pdf"` |
+| `GET /reports/summary.pdf` | `from`, `to` | `200 application/pdf`, `Content-Disposition: attachment; filename="orbita-2026-10-01_2026-10-31.pdf"`, `Cache-Control: no-store` |
+
+Errores: `400 VALIDATION_FAILED` (`RANGE_INVALID`), `422 REPORT_EMPTY`, `429 TOO_MANY_REQUESTS` (con `Retry-After`), `502 DOCUMENTS_UNAVAILABLE` (documents-api falló), `503 DOCUMENTS_UNAVAILABLE` (sin `AUTH_CLIENT_SECRET`).
+
+## Cómo funciona
+
+1. `PreparePDF` llama al **mismo caso de uso** que `GET /reports/summary` (mismas cifras, `to` recortado a hoy, mismo `RANGE_INVALID`). Además exige un periodo de hasta 366 días (inclusive, lo que acepta documents-api) y al menos un movimiento.
+2. Se gasta un cupo del límite (10 por hora por persona, en memoria, `middleware.QuotaLimiter`). Un periodo inválido o vacío no gasta cupo.
+3. `adapters/documents` convierte el resumen a `POST {DOCUMENTS_API_URL}/v1/documents/period-report` con el token de servicio del sistema `orbita` (el mismo de storage, ver plan 22/23):
+
+```json
+{"from":"2026-10-01","to":"2026-10-31","currencies":[{"currency":"PEN","income_total":"3200.00","expense_total":"1954.20","balance":"1245.80",
+  "expenses":[{"name":"Comida","total":"700.00","percent":"35.8"}],"incomes":[{"name":"Sueldo","total":"3200.00","percent":"100.0"}]}]}
+```
+
+   Dinero como texto con 2 decimales (el balance puede ser negativo), porcentaje con 1, nombres de hasta 80 caracteres (se recortan con "…"), hasta 12 monedas y 50 filas por ranking: si un ranking pasa de 50, las últimas se juntan en una fila "Otros" que suma sus totales, para que todo siga cuadrando.
+4. Los bytes del PDF se devuelven tal cual (se verifica que empiecen con `%PDF-`). El nombre del archivo sale solo de las fechas validadas. **No se guarda nada** en el servidor ni en storage.
 
 ## Reglas
 
-- Las mismas cifras que `GET /reports/summary` (plan 07): se genera desde el mismo caso de uso, no desde otra consulta.
-- Contenido en español: encabezado con el periodo, un bloque por moneda (ingresos, gastos, balance) y los dos rankings con sus barras y porcentajes. Formatos de `ORBITA_SPEC` §4 (`S/ 1,245.80`, `2 oct 2026`, `37.2%`). Fuente Manrope, como la app.
-- Se genera en el proceso y se transmite a la respuesta; no se guarda copia en el servidor (ni en R2).
-- El nombre del archivo sale solo de fechas validadas, nunca de texto del usuario.
-- Límite: 10 por hora por usuario.
+- El contenido, el idioma, la fuente y los formatos (`S/ 1,245.80`, `2 oct 2026`, `37.2%`) son de documents-api.
+- Cualquier fallo de documents-api (red, 4xx/5xx, respuesta que no es PDF) se responde `502 DOCUMENTS_UNAVAILABLE` con un mensaje fijo en español; su cuerpo nunca se reenvía y en el log solo van el estado y su `code`.
+- Sin `AUTH_CLIENT_SECRET` la ruta responde `503 DOCUMENTS_UNAVAILABLE` antes de tocar la base.
 
-## Preguntas antes de empezar
+## Pruebas
 
-1. Librería de PDF en Go (por ejemplo `go-pdf/fpdf` o `johnfercher/maroto`): se elige con una prueba de las dos.
-2. ¿Se comparte desde la app (hoja de compartir de Android) o solo se guarda en Descargas?
+- `integrations/servicetoken`: token reutilizado, renovado antes de vencer, un solo pedido en concurrencia, error de auth, reintento tras 401.
+- `reports/adapters/documents`: formato de dinero y porcentaje, "Otros", recorte de nombres y monedas.
+- Integración (Postgres + documents-api falso, `internal/modules/ledger/reports_pdf_test.go`): cifras iguales al resumen, `to` recortado y nombre del archivo, validaciones, periodo vacío, 502 sin filtrar el cuerpo, límite por persona.
+
+## Desviaciones respecto al plan original
+
+| Qué | Motivo |
+|---|---|
+| Sin librería de PDF en Go ni fuente Manrope en este repo | El dibujo lo hace atm-documents-api (compartido con otros sistemas) |
+| El nombre es `orbita-<from>_<to>.pdf`, no `orbita-2026-09.pdf` | Un periodo puede ser cualquier rango |
+| Periodo máximo de 366 días para el PDF (el resumen JSON sigue aceptando hasta 10 años) | Límite de documents-api |
+| `Content-Disposition` se expone en CORS | Para que la web lea el nombre del archivo |
 
 ## Variables nuevas para el servidor
 
-Ninguna previstas.
+`DOCUMENTS_API_URL` (por defecto `https://documents.atmosferast.com`) y `AUTH_CLIENT_SECRET` (ver plan 23).

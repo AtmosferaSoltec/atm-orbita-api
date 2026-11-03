@@ -6,9 +6,12 @@ import (
 	"io"
 	"net/url"
 	"sort"
-	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/AtmosferaSoltec/atm-orbita-api/internal/platform/ids"
 )
 
 // Memory guarda en memoria: para las pruebas.
@@ -19,6 +22,8 @@ type Memory struct {
 
 // MemoryObject es lo guardado en Memory.
 type MemoryObject struct {
+	OwnerID     uuid.UUID
+	FileName    string
 	ContentType string
 	Data        []byte
 }
@@ -27,15 +32,17 @@ type MemoryObject struct {
 func NewMemory() *Memory { return &Memory{objects: map[string]MemoryObject{}} }
 
 // Put guarda el objeto.
-func (m *Memory) Put(_ context.Context, key, contentType string, body io.Reader, _ int64) error {
+func (m *Memory) Put(_ context.Context, ownerID uuid.UUID, fileName, contentType string, body io.Reader, _ int64) (string, error) {
 	data, err := io.ReadAll(body)
 	if err != nil {
-		return err
+		return "", err
 	}
+	// La referencia es un UUID, como la de atm-storage-api.
+	key := ids.New().String()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.objects[key] = MemoryObject{ContentType: contentType, Data: data}
-	return nil
+	m.objects[key] = MemoryObject{OwnerID: ownerID, FileName: fileName, ContentType: contentType, Data: data}
+	return key, nil
 }
 
 // Get devuelve el objeto.
@@ -55,18 +62,6 @@ func (m *Memory) Delete(_ context.Context, keys ...string) error {
 	defer m.mu.Unlock()
 	for _, key := range keys {
 		delete(m.objects, key)
-	}
-	return nil
-}
-
-// DeletePrefix borra por prefijo.
-func (m *Memory) DeletePrefix(_ context.Context, prefix string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for key := range m.objects {
-		if strings.HasPrefix(key, prefix) {
-			delete(m.objects, key)
-		}
 	}
 	return nil
 }

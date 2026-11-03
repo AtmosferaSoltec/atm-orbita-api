@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/xml"
 	"errors"
-	"fmt"
 	"io"
 	"path"
 	"strings"
@@ -31,7 +30,7 @@ const (
 	fileNameMax    = 255
 )
 
-// Document es un archivo guardado con un recibo. Los bytes viven en R2.
+// Document es un archivo guardado con un recibo. Los bytes viven en atm-storage-api; StorageKey es el id que ese servicio dio al archivo.
 type Document struct {
 	ID          uuid.UUID
 	ReceiptID   uuid.UUID
@@ -54,7 +53,7 @@ func ParseKind(text string) (DocumentKind, bool) {
 	return "", false
 }
 
-// ContentType es el que se guarda en R2 y con el que se entrega.
+// ContentType es con el que se sube y se entrega.
 func (k DocumentKind) ContentType() string {
 	if k == KindPDF {
 		return "application/pdf"
@@ -69,15 +68,6 @@ func (k DocumentKind) MaxBytes() int {
 	}
 	return MaxXMLBytes
 }
-
-// StorageKey es la llave en R2. El usuario va delante para poder borrar todo lo
-// suyo por prefijo al eliminar la cuenta.
-func StorageKey(userID, receiptID, documentID uuid.UUID, kind DocumentKind) string {
-	return fmt.Sprintf("%s%s/%s.%s", UserPrefix(userID), receiptID, documentID, kind)
-}
-
-// UserPrefix es donde viven todos los archivos de recibos de una persona.
-func UserPrefix(userID uuid.UUID) string { return fmt.Sprintf("receipts/%s/", userID) }
 
 // CleanFileName deja solo el nombre (sin carpetas) y lo acota; vacío usa uno por defecto.
 func CleanFileName(name string, kind DocumentKind) string {

@@ -1,6 +1,6 @@
 # Plan 18 · Recibos por honorarios
 
-**Estado:** hecho (24 oct 2026). Migración `00012` aplicada en la base del VPS desde local por el túnel SSH; probado de punta a punta desde la web con el XML real de SUNAT y R2. Módulo **solo de la web** (`atm-orbita-web`, sección Recibos): no tiene pantallas en Android. Usa la misma cuenta.
+**Estado:** hecho (24 oct 2026). **Actualización 2 nov 2026:** los archivos ya no van a Cloudflare R2 sino a atm-storage-api (plan 23); donde este plan dice R2, léase atm-storage-api. Las llaves `receipts/{user_id}/…` y `DeletePrefix` ya no existen: `storage_key` guarda el id que da storage. Migración `00012` aplicada en la base del VPS desde local por el túnel SSH; probado de punta a punta desde la web con el XML real de SUNAT y R2. Módulo **solo de la web** (`atm-orbita-web`, sección Recibos): no tiene pantallas en Android. Usa la misma cuenta.
 
 ## Objetivo
 

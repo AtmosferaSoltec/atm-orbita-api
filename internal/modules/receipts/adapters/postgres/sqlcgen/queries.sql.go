@@ -342,6 +342,30 @@ func (q *Queries) ListStorageKeysOfReceipt(ctx context.Context, arg ListStorageK
 	return items, nil
 }
 
+const listStorageKeysOfUser = `-- name: ListStorageKeysOfUser :many
+SELECT storage_key FROM receipt_documents WHERE user_id = $1
+`
+
+func (q *Queries) ListStorageKeysOfUser(ctx context.Context, userID uuid.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listStorageKeysOfUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var storage_key string
+		if err := rows.Scan(&storage_key); err != nil {
+			return nil, err
+		}
+		items = append(items, storage_key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setReceiptCollected = `-- name: SetReceiptCollected :execrows
 UPDATE receipts SET collected_on = $3, updated_at = now() WHERE id = $1 AND user_id = $2
 `

@@ -46,6 +46,9 @@ ORDER BY kind;
 -- name: GetDocument :one
 SELECT * FROM receipt_documents WHERE receipt_id = $1 AND user_id = $2 AND kind = $3;
 
+-- name: ListStorageKeysOfUser :many
+SELECT storage_key FROM receipt_documents WHERE user_id = $1;
+
 -- name: ListStorageKeysOfReceipt :many
 SELECT storage_key FROM receipt_documents WHERE receipt_id = $1 AND user_id = $2;
 

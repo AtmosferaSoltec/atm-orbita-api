@@ -89,3 +89,28 @@ func TestAnUnknownEnvironmentIsRejected(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "APP_ENV")
 }
+
+func TestSharedServicesHaveProductionDefaults(t *testing.T) {
+	cfg, err := load(validEnv())
+	require.NoError(t, err)
+	assert.Equal(t, "https://auth.atmosferast.com", cfg.Auth.URL)
+	assert.Equal(t, "orbita", cfg.Auth.ClientID)
+	assert.Empty(t, cfg.Auth.ClientSecret, "the secret is optional")
+	assert.Equal(t, "https://storage.atmosferast.com", cfg.Services.StorageURL)
+	assert.Equal(t, "https://documents.atmosferast.com", cfg.Services.DocumentsURL)
+}
+
+func TestSharedServicesCanBeOverriddenAndMustBeURLs(t *testing.T) {
+	env := validEnv()
+	env["AUTH_CLIENT_SECRET"] = "s3cret"
+	env["STORAGE_API_URL"] = "http://localhost:3132/"
+	cfg, err := load(env)
+	require.NoError(t, err)
+	assert.Equal(t, "s3cret", cfg.Auth.ClientSecret)
+	assert.Equal(t, "http://localhost:3132", cfg.Services.StorageURL)
+
+	env["DOCUMENTS_API_URL"] = "documents.local"
+	_, err = load(env)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "DOCUMENTS_API_URL")
+}

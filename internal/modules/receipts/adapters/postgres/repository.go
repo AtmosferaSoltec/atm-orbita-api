@@ -252,6 +252,11 @@ func (r Documents) Delete(ctx context.Context, userID, receiptID uuid.UUID, kind
 	return doc.StorageKey, nil
 }
 
+// StorageKeysOfUser devuelve las llaves de todos los archivos de la persona.
+func (r Documents) StorageKeysOfUser(ctx context.Context, userID uuid.UUID) ([]string, error) {
+	return queries(ctx, r.db).ListStorageKeysOfUser(ctx, userID)
+}
+
 func toReceipt(row sqlcgen.Receipt) domain.Receipt {
 	var collected *dates.LocalDate
 	if row.CollectedOn != nil {

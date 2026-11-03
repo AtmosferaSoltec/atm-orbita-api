@@ -1015,6 +1015,37 @@ paths:
                         items: { $ref: "#/components/schemas/CurrencyReport" }
         "400": { $ref: "#/components/responses/ValidationFailed" }
 
+  /reports/summary.pdf:
+    get:
+      summary: El mismo reporte como PDF (lo dibuja atm-documents-api)
+      description: |
+        Mismas cifras, mismo `to` recortado a hoy y misma validación `RANGE_INVALID` que `GET /reports/summary`;
+        además el periodo no puede pasar de 366 días. Nada se guarda en el servidor. Límite: 10 por hora por persona
+        (un periodo inválido o vacío no gasta cupo).
+        Si hay más de 50 categorías en un ranking, las últimas se juntan en una fila "Otros".
+        Errores: `422 REPORT_EMPTY` (sin movimientos), `429 TOO_MANY_REQUESTS` (con `Retry-After`),
+        `502 DOCUMENTS_UNAVAILABLE` (documents-api falló) y `503 DOCUMENTS_UNAVAILABLE` (PDF no configurado).
+      operationId: reportSummaryPdf
+      parameters:
+        - { name: from, in: query, required: true, schema: { $ref: "#/components/schemas/LocalDate" } }
+        - { name: to, in: query, required: true, schema: { $ref: "#/components/schemas/LocalDate" } }
+      responses:
+        "200":
+          description: El PDF
+          headers:
+            Content-Disposition:
+              schema: { type: string, example: 'attachment; filename="orbita-2026-10-01_2026-10-31.pdf"' }
+              description: El nombre sale solo de las fechas validadas (`to` ya recortado a hoy)
+            Cache-Control: { schema: { type: string, example: no-store } }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "422": { description: REPORT_EMPTY, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "502": { description: DOCUMENTS_UNAVAILABLE (documents-api no respondió o rechazó la petición), content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "503": { description: DOCUMENTS_UNAVAILABLE (falta AUTH_CLIENT_SECRET), content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
   /credit-cards:
     get:
       summary: Tarjetas activas con su deuda por moneda
@@ -1405,7 +1436,7 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
   /receipts/{id}/documents/{kind}/url:
     get:
-      summary: URL firmada de R2 para bajar el archivo (vence en 5 minutos)
+      summary: URL firmada de atm-storage-api para bajar el archivo (vence en 5 minutos)
       operationId: receiptDocumentURL
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
