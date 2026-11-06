@@ -12,7 +12,7 @@ El repo trae lo mínimo: un servidor Gin con `/api/v1/health`, el `Dockerfile`, 
 
 1. **Una cosa a la vez.** Nunca implementes varios planes de golpe. Cuando termines un plan: corre sus pruebas, resume qué quedó hecho y **pide revisión al usuario** antes de pasar al siguiente.
 2. **Si algo es ambiguo, pregunta.** No inventes reglas de negocio. Lo que ya está decidido está en la sección 11.
-3. **Ramas:** todo el trabajo va en `develop`. Nunca hagas push a `main` ni a `production`, y nunca pases `develop` a `production`. Flujo único: `develop` → `main` → `production`. Pasar a `main`/`production` lo decide el usuario.
+3. **Ramas:** solo existen `main` y `production` (la rama `develop` se eliminó el 4 nov 2026). Todo el trabajo va en `main`; antes de subir a `main`, pide confirmación al usuario si él no lo pidió. Nunca hagas push a `production` (despliega): pasar `main` a `production` lo decide el usuario. Flujo único: `main` → `production`.
 4. **Commits:** Conventional Commits en inglés (`feat(auth): add refresh token rotation`). Commits pequeños, uno por cambio lógico.
 5. **No tienes acceso al servidor de producción ni lo necesitas.** Todo lo que el servidor requiere ya está preparado (sección 6). Lo único que dependerá del usuario es subir el `.env` y crear la base de datos, y eso se coordina como se explica en 6.3.
 6. **Migraciones siempre** (ver 7.1): ningún cambio de esquema se hace fuera de una migración versionada.
@@ -142,12 +142,12 @@ Grupos: `APP_ENV`, `PORT`, `DATABASE_URL`, `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TT
 ### 6.1 Cómo se despliega
 Para desplegar, el usuario promueve `main` a la rama `production`; al hacer push a `production` se activa `.github/workflows/deploy.yml`, con tres jobs en cadena:
 
-1. **check**: verifica que el commit **ya está en `main`** (hace cumplir `develop → main → production`), y corre `go vet`, `golangci-lint`, `go test ./...` y `go build ./...`.
+1. **check**: corre `go vet`, `golangci-lint`, `go test ./...` y `go build ./...`.
 2. **build**: construye la imagen con Docker Buildx **en GitHub** y la sube a GHCR como `ghcr.io/atmosferasoltec/atm-orbita-api` con tags `latest` y `sha-<commit>`.
 3. **deploy**: por SSH copia `deploy/docker-compose.yml` al servidor, hace `docker compose pull` y `up -d` con `IMAGE_TAG=sha-<commit>`, y espera a que el contenedor `orbita-api` esté `healthy` (si no lo está en 120 s, imprime logs y falla).
 
 
-No hay workflow en `develop` ni `main`: el check solo corre al desplegar. Por eso, **antes de pedir que se promueva a `production`, corre en local lo mismo que el check** (`go vet ./...`, `golangci-lint run`, `go test ./...`, `go build ./...`); un error de lint tumba el despliegue.
+No hay workflow en `main`: el check solo corre al desplegar. Por eso, **antes de pedir que se promueva a `production`, corre en local lo mismo que el check** (`go vet ./...`, `golangci-lint run`, `go test ./...`, `go build ./...`); un error de lint tumba el despliegue.
 
 Los secrets del repo (`SSH_HOST`, `SSH_USER`, `SSH_KEY`) ya están configurados.
 

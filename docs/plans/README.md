@@ -5,7 +5,7 @@ Planes para construir el backend real de la app Android `atm-orbita-android`, si
 - Escritos el 21 oct 2026, tras revisar completo el proyecto Android: sus documentos (`docs/01`…`06`, `ORBITA_SPEC.md`, `CLAUDE.md`), el dominio, `data/demo`, los ViewModels, las pantallas y sus pruebas.
 - **Fuente de verdad de las reglas:** el código de Android (`data/demo` y `domain`). Donde sus documentos dicen otra cosa, manda el código y la diferencia queda anotada en el plan.
 - Estado: **aprobados el 21 oct 2026**, con las decisiones de abajo. Se implementan de a uno; del 00 al 13 están hechos (el 09 se hizo antes que el 08, que depende de él). Queda el 14, opcional.
-- Rama: todo en `develop`. Flujo `develop` → `main` → `production`; promover lo decide el usuario.
+- Rama: todo en `main`. Flujo `main` → `production`; promover lo decide el usuario. (La rama `develop` existió hasta el 4 nov 2026: los planes y decisiones de abajo la mencionan como estaba cuando se escribieron.)
 
 ## Orden y dependencias
 

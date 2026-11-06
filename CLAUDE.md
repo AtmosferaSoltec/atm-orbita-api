@@ -6,18 +6,18 @@ Este archivo contiene las reglas del proyecto. Se irán agregando nuevas reglas 
 
 ## Regla 1: Ramas y flujo de promoción
 
-Hay exactamente 3 ramas:
+Hay exactamente 2 ramas (desde el 4 nov 2026; la rama `develop` se eliminó):
 
 | Rama | Propósito |
 |---|---|
-| `develop` | Aquí se trabaja todo: cambios nuevos, pruebas y testeos. |
-| `main` | Guarda el proyecto con los cambios de `develop` que ya están funcionales y reales. |
+| `main` | Aquí se trabaja todo: cambios nuevos, pruebas y testeos. Es la rama por defecto. |
 | `production` | Envía los cambios al servidor VPS Linux mediante un workflow de GitHub. |
 
-El flujo es siempre `develop` → `main` → `production`.
+El flujo es siempre `main` → `production`.
 
-- **Prohibido** pasar `develop` directamente a `production`. Todo cambio debe pasar primero por `main`.
-- El trabajo nuevo nunca se hace directamente sobre `main` ni `production`.
+- **Prohibido** subir cambios directo a `production`: todo cambio entra primero a `main`.
+- Subir a `main` no despliega nada. Subir a `production` sí: promover `main` a `production` lo decide el usuario.
+- No se vuelve a crear `develop`.
 
 ### Workflow de production
 
