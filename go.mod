@@ -8,6 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx-shopspring-decimal v0.0.0-20220624020537-1d36b5a1853e
 	github.com/jackc/pgx/v5 v5.11.0
+	github.com/joho/godotenv v1.5.1
 	github.com/pressly/goose/v3 v3.29.0
 	github.com/shopspring/decimal v1.6.0
 	github.com/stretchr/testify v1.12.1

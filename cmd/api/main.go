@@ -20,6 +20,10 @@ import (
 	// La imagen trae tzdata, pero así "hoy" por zona horaria no depende del sistema.
 	_ "time/tzdata"
 
+	// Loads .env from the working directory when there is one (local runs). Variables already
+	// in the environment win, and with no .env file (the server) it does nothing.
+	_ "github.com/joho/godotenv/autoload"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
